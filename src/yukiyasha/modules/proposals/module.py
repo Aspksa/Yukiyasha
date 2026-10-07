@@ -14,7 +14,6 @@ from yukiyasha.modules.primavtodor.access import PrimavtodorWriteAccess
 from yukiyasha.modules.primavtodor.errors import PrimavtodorError
 from yukiyasha.modules.proposals.errors import (
     ProposalNotFoundError,
-    ProposalStaleError,
     ProposalStateError,
     ProposalValidationError,
 )

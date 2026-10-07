@@ -1,30 +1,32 @@
 # Yukiyasha Architecture
 
-## v0.2.0 module foundation
+## v0.2.1 hardened module foundation
 
-Yukiyasha remains a modular monolith, but modules now have an explicit runtime boundary.
+Yukiyasha is a modular monolith with explicit runtime, module and transport boundaries.
 
 ### Layers
 
 1. **Core**
-   - process/runtime lifecycle;
-   - owns the module registry;
-   - no dependency on FastAPI or browser code.
+   - owns runtime lifecycle and the module registry;
+   - coordinates degraded/ready/stopped state;
+   - does not depend on FastAPI or browser code.
 
 2. **Application configuration**
    - immutable environment-driven settings;
-   - service identity, version and module paths.
+   - service identity and stable storage paths;
+   - package version comes from installed package metadata.
 
 3. **Modules**
    - explicit manifest;
-   - registration and lifecycle;
+   - registered/ready/failed/stopped lifecycle;
    - health snapshots;
-   - permissions declared by each module;
-   - modules do not import the web layer.
+   - declared permissions;
+   - no dependency on the web layer.
 
 4. **Web/API**
-   - transport only;
-   - exposes core/module state and module operations.
+   - transport and HTTP safety boundary;
+   - request body, Host and browser Origin validation;
+   - synchronous filesystem endpoints run through FastAPI's threadpool.
 
 ### Dependency rule
 
@@ -35,46 +37,30 @@ Browser -> Web/API -> Core -> Module Registry -> Modules
 
 Core and modules never import from Web/API.
 
-## First module: Диск Yukiyasha
-
-The Disk module is local sandboxed storage.
+## Диск Yukiyasha
 
 Default root:
 
 ```text
-data/disk
+~/.yukiyasha/disk
 ```
 
-Override with:
+Override with `YUKIYASHA_DISK_DIR`.
 
-```text
-YUKIYASHA_DISK_DIR
-```
-
-Security invariants:
-- absolute paths are rejected;
-- `..` traversal outside the disk root is rejected;
-- symlink entries are not exposed by directory listings;
+Security and consistency invariants:
+- absolute paths and traversal outside the disk root are rejected;
+- symlink escapes are rejected;
+- replacement writes use a temporary file in the destination directory and `os.replace`;
+- no-overwrite publication uses an atomic hard-link operation;
+- UTF-8 bytes are read/written directly so line endings are never translated by the OS;
 - text API reads/writes are capped at 1 MiB;
-- deleting the disk root is forbidden.
+- HTTP request bodies are capped at 2 MiB before application parsing;
+- deleting the disk root is forbidden;
+- permission, conflict, invalid-path and size failures are represented explicitly.
 
-Declared permissions:
+Declared permissions remain metadata in v0.2.1:
 - `disk.read`
 - `disk.write`
 - `disk.delete`
 
-### API
-
-- `GET /api/modules` — module manifests, lifecycle state and health;
-- `GET /api/disk?path=` — list a directory;
-- `GET /api/disk/file?path=` — read UTF-8 text;
-- `PUT /api/disk/file` — write UTF-8 text;
-- `DELETE /api/disk/file?path=` — delete a file or empty directory.
-
-### Engineering rules
-
-- every release changes the canonical project version;
-- behavior changes require tests;
-- main should only receive green CI;
-- project state must record the exact next action;
-- modules are added behind explicit interfaces, not by coupling into the UI.
+The next architecture step is enforcing those declarations through a central permission boundary.

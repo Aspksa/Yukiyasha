@@ -6,11 +6,13 @@ module, never on the web layer, and talks to the disk exclusively through its pu
 """
 
 import re
-from datetime import date
+from datetime import date, datetime
 
 from yukiyasha.modules.disk import DiskModule
 from yukiyasha.modules.manifest import ModuleManifest
-from yukiyasha.modules.primavtodor import calendar_ru
+from yukiyasha.modules.primavtodor import calendar_ru, fuel_inbox
+from yukiyasha.modules.primavtodor.bookings import Bookings
+from yukiyasha.modules.primavtodor.briefing import build_briefing
 from yukiyasha.modules.primavtodor.calculations import vehicle_calculations
 from yukiyasha.modules.primavtodor.errors import (
     InvalidDocumentNameError,
@@ -69,6 +71,7 @@ class PrimavtodorModule:
         self.settings = ModuleSettings(disk)
         self.data = Records(disk, self.settings)  # employees, vehicles, waybills, fuel
         self.timesheet = Timesheet(disk, self.data)
+        self.bookings = Bookings(disk, self.data, self.timesheet)
         self._state = ModuleState.REGISTERED
         self._last_error: str | None = None
 
@@ -93,6 +96,7 @@ class PrimavtodorModule:
         self._disk.make_dir(PRIMAVTODOR_DIR)
         for section in SECTIONS:
             self._disk.make_dir(section.path)
+        fuel_inbox.prepare(self._disk)
         self._last_error = None
         self._state = ModuleState.READY
 
@@ -154,7 +158,11 @@ class PrimavtodorModule:
                 "group": section.group,
                 "group_title": GROUP_TITLES[section.group],
                 "path": section.path,
-                "count": len(self._disk.list_entries(section.path)),
+                "count": sum(
+                    1
+                    for entry in self._disk.list_entries(section.path)
+                    if not fuel_inbox.is_service_folder(section.id, entry)
+                ),
             }
             for section in SECTIONS
         ]
@@ -302,6 +310,29 @@ class PrimavtodorModule:
     ) -> dict[str, object]:
         """Preview (``apply=False``) or load the provider's statement into the fuel section."""
         return import_statement(self.data, content, filename, apply=apply)
+
+    def briefing(self, now: datetime | None = None) -> dict[str, object]:
+        """What needs attention today: trips, leave, open waybills, the inbox, the month."""
+        moment = now or datetime.now()  # noqa: DTZ005 - the person's own clock
+        today = moment.date()
+        return build_briefing(
+            self.data,
+            self.settings,
+            self.timesheet,
+            self.bookings.overview(today, 14, today),
+            len(fuel_inbox.status(self._disk)["waiting"]),  # type: ignore[arg-type]
+            moment,
+        )
+
+    def fuel_inbox(self) -> dict[str, object]:
+        """Statements waiting in «ГСМ/Входящие»."""
+        return fuel_inbox.status(self._disk)
+
+    def fuel_inbox_scan(self) -> dict[str, object]:
+        """Load every statement waiting in «ГСМ/Входящие»."""
+        return fuel_inbox.scan(
+            self._disk, lambda content, name: self.import_fuel_statement(content, name, apply=True)
+        )
 
     # ----- monthly fuel card -----
 

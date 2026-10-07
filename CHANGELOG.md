@@ -5,6 +5,35 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- **График машин, second pass:** bookings can be dragged to other days or another car and
+  stretched by their edges (a conflict is flagged, never refused); gradient bars with the driver's
+  initials, a «сегодня» marker and a highlighted today column, week separators, a sticky header,
+  a legend, a free/busy dot and the usual driver on each car, a «+» on free days.
+- **Quick booking from one line** in the schedule: type what you hear on the phone, «Веровский
+  7-9 командировка Находка», «Игорь с 5 по 7», «хино 12-13 ремонт» or «завтра», and the line is
+  read into a driver, a car, dates and a type. The car comes from the driver (and the driver from
+  the car) when only one is named, declensions and Latin/Russian makes are understood, an
+  ambiguous name is offered as choices and never guessed. A preview shows overlaps; Enter again
+  books it. API: `POST /api/primavtodor/bookings/parse`.
+- **Summary for today** at the top of the Примавтодор page: who is away, who leaves tomorrow,
+  drivers on leave or sick (from the timesheet), overlaps, waybills left open, statements waiting
+  in the inbox and the open findings of the month (the previous month too during its first ten
+  days); each line opens the place to act. API: `GET /api/primavtodor/briefing`.
+- **Statement inbox:** drop the provider's .xls/.xlsx into «ГСМ/Входящие» and it is loaded when
+  the page opens (or from the summary). A file that loaded cleanly moves to «Обработано»; one with
+  operations that could not be matched stays with the reasons. Nothing is created twice. The disk
+  module gained `read_bytes` (20 MiB) and `move` (never overwrites) for it.
+- **График машин** at the top of the Примавтодор page: a car × day grid showing who has which
+  car and for how long. A booking is a driver, a car, *с … по …* and a type (business trip, car
+  taken for the whole day, or repair/service); there is no "who asked" field. Drag over free days
+  to book, click a bar to edit or delete, a strip shows who is away now and who leaves this week,
+  weekends and holidays come from the production calendar, overlaps on a car or a driver are
+  outlined in red (never forbidden), and the booking dialog lists the cars that are free on the
+  chosen dates. Counters show trips under way and how many cars and drivers are free, and a
+  **«Кто свободен»** panel lists the cars and drivers without work on a chosen day (today,
+  tomorrow or any date, or click a day in the grid) with how long each stays free; a click on a
+  card starts a booking for them. The schedule reads the timesheet: a driver marked *Б* (sick) or *ОТ* (leave) is not offered as free, appears in a «Табель» strip with the end date, and a booking over such days is flagged.
+  API: `/api/primavtodor/bookings`.
 - **Cars and cards move between drivers, the history is kept in the employee.** Change a
   driver's car or fuel card at any time (today the Hino, tomorrow the Lexus; a lost card is
   detached and another attached) with an optional *Смена … действует с* date; the employee shows

@@ -1,0 +1,948 @@
+"use strict";
+
+/* График машин: a car × day grid on the Примавтодор page. Records live in /api/primavtodor/bookings. */
+
+const SCH_ICONS = {
+  trip: "M3 8h18v11H3z M9 8V5.5h6V8 M3 13.5h18",
+  busy: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 7.5V12l3 2",
+  service: "M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z",
+  car: "M5 16v-5l2-5h10l2 5v5 M3 16h18 M7 19.5V16 M17 19.5V16 M7.5 12h9",
+  person: "M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 21c0-4 3.6-6 8-6s8 2 8 6",
+  free: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M8 12.2l2.8 2.8L16 9.5",
+  calendar: "M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4",
+  sick: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 8v8 M8 12h8",
+  warn: "M12 3l10 18H2z M12 10v5 M12 18v.2",
+  file: "M6 3h8l4 4v14H6z M14 3v4h4 M9 12h6 M9 16h6",
+  fuel: "M12 3c3.5 4 6 6.8 6 10a6 6 0 0 1-12 0c0-3.2 2.5-6 6-10z",
+  check: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M8 12.2l2.8 2.8L16 9.5",
+  arrow: "M5 12h14 M13 6l6 6-6 6",
+  leave: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M19 5l-2 2 M7 17l-2 2",
+};
+
+/** A small stroke icon; ``name`` is a key of SCH_ICONS. */
+function schIcon(name, size = 16) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", SCH_ICONS[name] ?? SCH_ICONS.trip);
+  svg.append(path);
+  return svg;
+}
+
+/** Round badge with the initials of a name, its colour fixed by the name. */
+function schAvatar(name) {
+  const parts = String(name || "?").trim().split(/\s+/);
+  const badge = schEl("span", "sch-ava", ((parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? "")).toUpperCase());
+  let hash = 0;
+  for (const ch of String(name)) hash = (hash * 31 + ch.codePointAt(0)) % 360;
+  badge.style.setProperty("--h", String(hash));
+  return badge;
+}
+const SCH_WEEKDAYS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+const SCH_MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+
+const sch = {
+  wired: false,
+  start: null, // Date at local midnight
+  days: 14,
+  data: null,
+  day: null, // the day the "free" panel is about (ISO), null = today
+  drag: null, // { vehicleId, from, to, track }
+  editing: null,
+  kind: "trip",
+  employees: [],
+  controller: null,
+  justDragged: false,
+  quick: null, // { text, guess } of the line that was read and waits for Enter
+};
+
+const schById = (id) => document.getElementById(id);
+
+function schIso(date) {
+  return PV_UTIL.todayIso(date);
+}
+
+function schParse(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function schAdd(date, n) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + n);
+}
+
+function schDiff(aIso, bIso) {
+  return Math.round((schParse(aIso) - schParse(bIso)) / 86400000);
+}
+
+function schIconBadge(className, name, size) {
+  const badge = schEl("span", className);
+  badge.append(schIcon(name, size));
+  return badge;
+}
+
+function schEl(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+/** "Веровский Иван Петрович" -> "Веровский И." */
+function schShort(name) {
+  const [last, first] = String(name || "").trim().split(/\s+/);
+  return first ? `${last} ${first[0]}.` : last || "";
+}
+
+function schDayLabel(iso) {
+  const date = schParse(iso);
+  return `${date.getDate()} ${SCH_MONTHS[date.getMonth()]}`;
+}
+
+function schWire() {
+  if (sch.wired) return;
+  sch.wired = true;
+  const today = new Date();
+  sch.start = schAdd(new Date(today.getFullYear(), today.getMonth(), today.getDate()), -1);
+
+  schById("sch-prev").addEventListener("click", () => schShift(-Math.floor(sch.days / 2)));
+  schById("sch-next").addEventListener("click", () => schShift(Math.floor(sch.days / 2)));
+  schById("sch-today").addEventListener("click", () => {
+    const now = new Date();
+    sch.start = schAdd(new Date(now.getFullYear(), now.getMonth(), now.getDate()), -1);
+    void schLoad();
+  });
+  for (const button of document.querySelectorAll(".sch-span [data-days]")) {
+    button.addEventListener("click", () => {
+      sch.days = Number(button.dataset.days);
+      void schLoad();
+    });
+  }
+  schById("sch-new").addEventListener("click", () => void schOpen({ from: schIso(new Date()) }));
+  schById("form-booking").addEventListener("submit", (event) => void schSave(event));
+  schById("bk-delete").addEventListener("click", () => void schDelete());
+  for (const id of ["bk-from", "bk-to"]) schById(id).addEventListener("change", () => void schFree());
+  schById("bk-driver").addEventListener("change", schSuggestVehicle);
+  schById("bk-vehicle").addEventListener("change", schSuggestDriver);
+  document.addEventListener("pointerup", schEndDrag);
+  schById("sch-quick-form").addEventListener("submit", (event) => void schQuickSubmit(event));
+  schById("sch-quick").addEventListener("input", () => {
+    if (sch.quick && sch.quick.text !== schById("sch-quick").value) {
+      sch.quick = null;
+      schById("sch-quick-out").replaceChildren();
+    }
+  });
+}
+
+function schShift(days) {
+  sch.start = schAdd(sch.start, days);
+  void schLoad();
+}
+
+async function schLoad() {
+  schWire();
+  sch.controller?.abort();
+  const controller = new AbortController();
+  sch.controller = controller;
+  for (const button of document.querySelectorAll(".sch-span [data-days]")) {
+    button.classList.toggle("active", Number(button.dataset.days) === sch.days);
+  }
+  try {
+    const params = { start: schIso(sch.start), days: sch.days };
+    if (sch.day) params.day = sch.day;
+    sch.data = await api("GET", "/api/primavtodor/bookings", { params, signal: controller.signal });
+    if (controller.signal.aborted) return;
+    schRender();
+  } catch (error) {
+    if (isAbort(error)) return;
+    const box = schEl("div", "module-error");
+    box.append(schEl("strong", "", "График не загрузился"), document.createElement("br"), describeError(error));
+    schById("sch-grid").replaceChildren(box);
+  }
+}
+
+/* ---------- rendering ---------- */
+
+function schRender() {
+  const data = sch.data;
+  schRenderLegend();
+  schById("sch-range").textContent = `${schDayLabel(data.start)} — ${schDayLabel(data.end)}`;
+  schRenderStats(data);
+  schRenderNow(data);
+  schRenderFree(data);
+  const grid = schById("sch-grid");
+  grid.style.setProperty("--days", data.days.length);
+
+  const head = schEl("div", "sch-row sch-headrow");
+  head.append(schEl("div", "sch-car sch-corner", "Машина"));
+  const days = schEl("div", "sch-days");
+  data.days.forEach((day, index) => {
+    const date = schParse(day.date);
+    const picked = day.date === data.free.day;
+    const cell = schEl("button", `sch-day ${day.kind}${day.date === data.today ? " today" : ""}${picked ? " sel" : ""}${date.getDay() === 1 ? " week" : ""}`);
+    cell.type = "button";
+    cell.title = "Показать, кто свободен в этот день";
+    cell.addEventListener("click", () => {
+      sch.day = day.date;
+      void schLoad();
+    });
+    if (day.date === data.today) cell.append(schEl("span", "sch-month now", "сегодня"));
+    else if (index === 0 || date.getDate() === 1) {
+      cell.append(schEl("span", "sch-month", SCH_MONTHS[date.getMonth()].slice(0, 3)));
+    }
+    cell.append(schEl("b", "", String(date.getDate())), schEl("small", "", SCH_WEEKDAYS[date.getDay()]));
+    days.append(cell);
+  });
+  head.append(days);
+
+  const rows = data.vehicles.map((vehicle) => schRenderCar(vehicle, data));
+  if (!rows.length) {
+    const empty = schEl("p", "sch-empty", "Добавьте машины в разделе «Гараж» — они появятся здесь.");
+    grid.replaceChildren(head, empty);
+    return;
+  }
+  grid.replaceChildren(head, ...rows);
+}
+
+function schRenderNow(data) {
+  const box = schById("sch-now");
+  const parts = [];
+  const chip = (row, soon) => {
+    const left = schDiff(row.date_to, data.today) + 1;
+    const node = schEl("button", `sch-chip ${row.kind}${soon ? " soon" : ""}`);
+    node.type = "button";
+    node.append(
+      schIconBadge("sch-chip-icon", row.kind, 14),
+      schEl("b", "", row.vehicle),
+      schEl("span", "", row.driver ? schShort(row.driver) : row.kind_label),
+    );
+    const when = soon
+      ? `с ${schDayLabel(row.date_from)}`
+      : left <= 1
+        ? "до сегодня"
+        : `ещё ${left} ${plural(left, "день", "дня", "дней")} · до ${PV_UTIL.formatDate(row.date_to).slice(0, 5)}`;
+    node.append(schEl("em", "", when));
+    node.title = `${row.kind_label}${row.note ? ` · ${row.note}` : ""} · ${row.span}`;
+    node.addEventListener("click", () => void schOpen({ id: row.id }));
+    return node;
+  };
+  if (data.now.length) {
+    parts.push(schEl("span", "sch-now-label", "Сейчас в отъезде"), ...data.now.map((row) => chip(row, false)));
+  } else {
+    parts.push(schEl("span", "sch-now-label ok", "Сегодня все машины на месте"));
+  }
+  if (data.absent_now.length) {
+    parts.push(
+      schEl("span", "sch-now-label", "Табель"),
+      ...data.absent_now.map((item) => {
+        const node = schEl("span", `sch-chip out ${item.code === "Б" ? "sick" : "leave"}`);
+        node.append(
+          schIconBadge("sch-chip-icon", item.code === "Б" ? "sick" : "leave", 14),
+          schEl("b", "", schShort(item.name)),
+          schEl("span", "", item.label),
+          schEl("em", "", `до ${PV_UTIL.formatDate(item.date_to).slice(0, 5)}`),
+        );
+        node.title = "Отметка в табеле";
+        return node;
+      }),
+    );
+  }
+  if (data.soon.length) {
+    parts.push(schEl("span", "sch-now-label", "Скоро"), ...data.soon.map((row) => chip(row, true)));
+  }
+  box.replaceChildren(...parts);
+}
+
+function schStat(icon, tone, big, small, label) {
+  const card = schEl("div", `sch-stat ${tone}`);
+  const mark = schEl("span", "sch-stat-icon");
+  mark.append(schIcon(icon, 22));
+  const text = schEl("div", "sch-stat-text");
+  const number = schEl("b", "", big);
+  if (small) number.append(schEl("small", "", small));
+  text.append(number, schEl("span", "", label));
+  card.append(mark, text);
+  return card;
+}
+
+function schRenderLegend() {
+  const box = schById("sch-legend");
+  if (box.childElementCount) return;
+  for (const [kind, label] of [["trip", "Командировка"], ["busy", "Занята весь день"], ["service", "Ремонт / ТО"]]) {
+    const item = schEl("span", `sch-leg ${kind}`);
+    item.append(schIconBadge("sch-leg-ico", kind, 12), label);
+    box.append(item);
+  }
+  const clash = schEl("span", "sch-leg clash");
+  clash.append(schIconBadge("sch-leg-ico", "warn", 12), "Пересечение");
+  box.append(clash);
+}
+
+function schRenderStats(data) {
+  const free = data.free;
+  schById("sch-stats").replaceChildren(
+    schStat("trip", "away", String(data.now.length), "", `${plural(data.now.length, "выезд", "выезда", "выездов")} идут сегодня`),
+    schStat("car", "cars", String(free.vehicles.length), `из ${free.vehicles_total}`, `${plural(free.vehicles.length, "машина свободна", "машины свободны", "машин свободно")} ${schWhen(free.day, data.today)}`),
+    schStat("person", "people", String(free.drivers.length), `из ${free.drivers_total}`, `${plural(free.drivers.length, "водитель свободен", "водителя свободны", "водителей свободно")} ${schWhen(free.day, data.today)}`),
+  );
+}
+
+/** "сегодня", "завтра" or "12 октября". */
+function schWhen(iso, today) {
+  const gap = schDiff(iso, today);
+  if (gap === 0) return "сегодня";
+  if (gap === 1) return "завтра";
+  return schDayLabel(iso);
+}
+
+function schNextText(next, day) {
+  if (!next) return "дальше свободна";
+  const days = schDiff(next, day);
+  return `свободна ${days} ${plural(days, "день", "дня", "дней")}, потом ${schDayLabel(next)}`;
+}
+
+function schRenderFree(data) {
+  const free = data.free;
+  const panel = schById("sch-freepanel");
+  const head = schEl("div", "sch-free-head");
+  const title = schEl("h3", "", `Кто свободен ${schWhen(free.day, data.today)}`);
+  title.prepend(schIconBadge("sch-free-mark", "free", 16));
+  const pick = schEl("div", "sch-free-pick");
+  const input = document.createElement("input");
+  input.type = "date";
+  input.value = free.day;
+  input.setAttribute("aria-label", "День");
+  input.addEventListener("change", () => {
+    if (!input.value) return;
+    sch.day = input.value;
+    void schLoad();
+  });
+  const quick = (label, offset) => {
+    const button = schEl("button", `sch-quick${schDiff(free.day, data.today) === offset ? " active" : ""}`, label);
+    button.type = "button";
+    button.addEventListener("click", () => {
+      sch.day = offset ? schIso(schAdd(schParse(data.today), offset)) : null;
+      void schLoad();
+    });
+    return button;
+  };
+  pick.append(quick("Сегодня", 0), quick("Завтра", 1), input);
+  head.append(title, pick);
+
+  const column = (label, icon, items, build, emptyText) => {
+    const box = schEl("div", "sch-free-col");
+    const heading = schEl("h4", "", label);
+    heading.prepend(schIconBadge("sch-free-icon", icon, 15));
+    const list = schEl("div", "sch-free-list");
+    if (items.length) list.append(...items.map(build));
+    else list.append(schEl("p", "sch-free-none", emptyText));
+    box.append(heading, list);
+    return box;
+  };
+  const carCard = (car) => {
+    const card = schEl("button", "sch-card");
+    card.type = "button";
+    card.append(
+      schIconBadge("sch-card-ico", "car", 18),
+      schEl("b", "mono", car.plate),
+      schEl("span", "", car.model),
+      schEl("small", "", car.driver ? `обычно ${schShort(car.driver)}` : "без закреплённого водителя"),
+      schEl("em", "", schNextText(car.next, free.day)),
+    );
+    card.addEventListener("click", () => void schOpen({ vehicle_id: car.id, from: free.day }));
+    return card;
+  };
+  const personCard = (person) => {
+    const card = schEl("button", "sch-card");
+    card.type = "button";
+    card.append(
+      schAvatar(person.name),
+      schEl("b", "", schShort(person.name)),
+      schEl("span", "", person.plate ? `его машина ${person.plate}` : "машина не закреплена"),
+      schEl("small", "", ""),
+      schEl("em", "", schNextText(person.next, free.day).replace("свободна", "свободен")),
+    );
+    card.addEventListener("click", () => void schOpen({ vehicle_id: person.vehicle_id ?? "", driver_id: person.id, from: free.day }));
+    return card;
+  };
+  const columns = schEl("div", "sch-free-cols");
+  columns.append(
+    column("Машины без работы", "car", free.vehicles, carCard, "Все машины заняты"),
+    column("Водители без работы", "person", free.drivers, personCard, "Все водители заняты"),
+  );
+  panel.replaceChildren(head, columns);
+  if (free.absent.length) {
+    const line = schEl("p", "sch-free-absent");
+    line.append(schIconBadge("sch-free-icon", "calendar", 15), "Не работают по табелю: ");
+    free.absent.forEach((item, index) => {
+      if (index) line.append(", ");
+      line.append(schEl("b", "", schShort(item.name)), ` — ${item.label} до ${PV_UTIL.formatDate(item.date_to).slice(0, 5)}`);
+    });
+    panel.append(line);
+  }
+}
+
+function schLanes(rows) {
+  const ends = [];
+  const placed = [];
+  for (const row of rows) {
+    let lane = ends.findIndex((end) => end < row.date_from);
+    if (lane < 0) {
+      lane = ends.length;
+      ends.push("");
+    }
+    ends[lane] = row.date_to;
+    placed.push({ row, lane });
+  }
+  return { placed, count: Math.max(1, ends.length) };
+}
+
+function schRenderCar(vehicle, data) {
+  const mine = data.bookings.filter((row) => row.vehicle_id === vehicle.id);
+  const { placed, count } = schLanes(mine);
+  const total = data.days.length;
+  const busyNow = data.now.some((item) => item.vehicle_id === vehicle.id);
+
+  const row = schEl("div", "sch-row");
+  const car = schEl("div", "sch-car");
+  const top = schEl("div", "sch-car-top");
+  const dot = schEl("i", `sch-dot ${busyNow ? "busy" : "free"}`);
+  dot.title = busyNow ? "Сегодня занята" : "Сегодня свободна";
+  top.append(dot, schEl("b", "mono", vehicle.plate));
+  car.append(top, schEl("span", "", vehicle.model));
+  if (vehicle.driver) {
+    const who = schEl("small", "sch-car-driver");
+    who.append(schAvatar(vehicle.driver), schShort(vehicle.driver));
+    car.append(who);
+  }
+
+  const track = schEl("div", "sch-track");
+  track.dataset.vehicle = vehicle.id;
+  track.style.setProperty("--lanes", count);
+  const cells = schEl("div", "sch-cells");
+  data.days.forEach((day, index) => {
+    const weekday = schParse(day.date).getDay();
+    const cell = schEl(
+      "div",
+      `sch-cell ${day.kind}${day.date === data.today ? " today" : ""}${day.date === data.free.day ? " sel" : ""}${weekday === 1 ? " week" : ""}`,
+    );
+    cell.dataset.i = String(index);
+    cell.addEventListener("pointerdown", (event) => schStartDrag(event, vehicle.id, index, track));
+    cell.addEventListener("pointerenter", () => schMoveDrag(vehicle.id, index));
+    cells.append(cell);
+  });
+  const bars = schEl("div", "sch-bars");
+  for (const { row: booking, lane } of placed) {
+    const first = schDiff(booking.date_from, data.start);
+    const last = schDiff(booking.date_to, data.start);
+    const from = Math.max(0, first);
+    const to = Math.min(total - 1, last);
+    const width = to - from + 1;
+    const bar = schEl("div", `sch-bar ${booking.kind}${booking.conflicts.length ? " clash" : ""}${width === 1 ? " narrow" : ""}`);
+    bar.tabIndex = 0;
+    bar.setAttribute("role", "button");
+    bar.style.gridColumn = `${from + 1} / ${to + 2}`;
+    bar.style.gridRow = String(lane + 1);
+    if (first < 0) bar.classList.add("cut-left");
+    if (last > total - 1) bar.classList.add("cut-right");
+    if (first >= 0) bar.append(schEl("span", "sch-h sch-h-l"));
+    bar.append(schIconBadge("sch-bar-icon", booking.kind, 14));
+    if (booking.driver && width >= 2) bar.append(schAvatar(booking.driver));
+    const label = booking.driver ? schShort(booking.driver) : booking.kind_label;
+    if (width >= 2 || !booking.driver) bar.append(schEl("span", "sch-bar-text", label));
+    if (booking.note && width >= 4) bar.append(schEl("small", "", booking.note));
+    if (booking.conflicts.length) bar.append(schIconBadge("sch-bar-warn", "warn", 14));
+    if (last <= total - 1) bar.append(schEl("span", "sch-h sch-h-r"));
+    const warn = booking.conflicts.length ? `\n⚠ ${booking.conflicts.join("; ")}` : "";
+    bar.title = `${booking.kind_label}: ${booking.driver || booking.vehicle}\n${booking.span} · ${booking.days} ${plural(booking.days, "день", "дня", "дней")}${booking.note ? `\n${booking.note}` : ""}${warn}\n\nПотяните, чтобы сдвинуть; за край — чтобы изменить срок`;
+    bar.addEventListener("click", () => {
+      if (!sch.justDragged) void schOpen({ id: booking.id });
+    });
+    bar.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        void schOpen({ id: booking.id });
+      }
+    });
+    bar.addEventListener("pointerdown", (event) => schBarDown(event, bar, booking, first, last, cells));
+    bars.append(bar);
+  }
+  track.append(cells, bars);
+  row.append(car, track);
+  return row;
+}
+
+/* ---------- move and resize a booking ---------- */
+
+function schBarDown(event, bar, booking, first, last, cells) {
+  if (event.button !== 0) return;
+  const handle = event.target.closest(".sch-h");
+  if (event.pointerType === "touch" && !handle) return; // a finger scrolls the grid
+  event.preventDefault();
+  const total = sch.data.days.length;
+  const width = cells.getBoundingClientRect().width / total;
+  const mode = handle ? (handle.classList.contains("sch-h-l") ? "start" : "end") : "move";
+  const drag = { x: event.clientX, moved: false, delta: 0, vehicle: booking.vehicle_id, track: null };
+  bar.setPointerCapture(event.pointerId);
+  bar.classList.add("lifted");
+
+  const place = () => {
+    let a = first;
+    let b = last;
+    if (mode === "move") {
+      a = first + drag.delta;
+      b = last + drag.delta;
+    } else if (mode === "start") {
+      a = Math.min(first + drag.delta, last);
+    } else {
+      b = Math.max(last + drag.delta, first);
+    }
+    bar.style.gridColumn = `${Math.max(0, a) + 1} / ${Math.min(total - 1, b) + 2}`;
+    return [a, b];
+  };
+  const onMove = (e) => {
+    if (Math.abs(e.clientX - drag.x) > 4) drag.moved = true;
+    drag.delta = Math.round((e.clientX - drag.x) / width);
+    place();
+    if (mode === "move") {
+      const under = document.elementsFromPoint(e.clientX, e.clientY).find((n) => n.matches?.(".sch-track"));
+      for (const node of document.querySelectorAll(".sch-track.drop")) node.classList.remove("drop");
+      if (under) {
+        under.classList.add("drop");
+        drag.vehicle = under.dataset.vehicle;
+      }
+    }
+  };
+  const onUp = async () => {
+    bar.removeEventListener("pointermove", onMove);
+    bar.removeEventListener("pointerup", onUp);
+    bar.removeEventListener("pointercancel", onUp);
+    bar.classList.remove("lifted");
+    for (const node of document.querySelectorAll(".sch-track.drop")) node.classList.remove("drop");
+    if (!drag.moved) return;
+    sch.justDragged = true;
+    setTimeout(() => (sch.justDragged = false), 250);
+    const [a, b] = place();
+    if (a === first && b === last && drag.vehicle === booking.vehicle_id) {
+      schRender();
+      return;
+    }
+    try {
+      const saved = await api("PUT", `/api/primavtodor/bookings/${booking.id}`, {
+        body: {
+          vehicle_id: drag.vehicle,
+          driver_id: booking.driver_id ?? "",
+          kind: booking.kind,
+          note: booking.note,
+          date_from: schIso(schAdd(sch.start, a)),
+          date_to: schIso(schAdd(sch.start, b)),
+        },
+      });
+      if (saved.conflicts.length) toast(`Сдвинуто, но есть пересечение: ${saved.conflicts[0]}`, "error");
+      else toast(`${saved.driver ? schShort(saved.driver) : saved.kind_label}: ${saved.vehicle}, ${saved.span}`);
+    } catch (error) {
+      toast(describeError(error), "error");
+    }
+    await schLoad();
+    void briefLoad();
+  };
+  bar.addEventListener("pointermove", onMove);
+  bar.addEventListener("pointerup", onUp);
+  bar.addEventListener("pointercancel", onUp);
+}
+
+/* ---------- drag to create ---------- */
+
+function schStartDrag(event, vehicleId, index, track) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  sch.drag = { vehicleId, from: index, to: index, track };
+  schPaintDrag();
+}
+
+function schMoveDrag(vehicleId, index) {
+  if (!sch.drag || sch.drag.vehicleId !== vehicleId) return;
+  sch.drag.to = index;
+  schPaintDrag();
+}
+
+function schPaintDrag() {
+  const { from, to, track } = sch.drag;
+  const [low, high] = from <= to ? [from, to] : [to, from];
+  for (const cell of track.querySelectorAll(".sch-cell")) {
+    const i = Number(cell.dataset.i);
+    cell.classList.toggle("pick", i >= low && i <= high);
+  }
+}
+
+function schEndDrag() {
+  const drag = sch.drag;
+  if (!drag) return;
+  sch.drag = null;
+  for (const cell of drag.track.querySelectorAll(".pick")) cell.classList.remove("pick");
+  const [low, high] = drag.from <= drag.to ? [drag.from, drag.to] : [drag.to, drag.from];
+  const day = (i) => schIso(schAdd(sch.start, i));
+  void schOpen({ vehicle_id: drag.vehicleId, from: day(low), to: day(high) });
+}
+
+/* ---------- dialog ---------- */
+
+function schFillSelect(select, options, selected, blank) {
+  select.replaceChildren();
+  if (blank) select.append(new Option(blank, ""));
+  for (const [value, label] of options) select.append(new Option(label, value));
+  select.value = selected ?? "";
+}
+
+async function schOpen({ id = null, vehicle_id = "", driver_id = "", from = "", to = "", kind = "trip", note = "" }) {
+  const dialog = schById("dlg-booking");
+  if (dialog.open) return;
+  try {
+    const employees = await api("GET", "/api/primavtodor/records/employees");
+    sch.employees = employees.records.filter((item) => item.values.is_driver);
+  } catch (error) {
+    toast(describeError(error), "error");
+    return;
+  }
+  const existing = id ? sch.data.bookings.find((row) => row.id === id) : null;
+  if (id && !existing) {
+    toast("Запись не найдена, обновите график", "error");
+    return;
+  }
+  sch.editing = existing;
+  const values = existing ?? { vehicle_id, driver_id, date_from: from, date_to: to || from, kind, note };
+
+  schById("dlg-booking-title").textContent = existing ? "Изменить выезд" : "Выезд машины";
+  schFillSelect(
+    schById("bk-vehicle"),
+    sch.data.vehicles.map((car) => [car.id, `${car.plate} · ${car.model}`]),
+    values.vehicle_id,
+    "— выберите —",
+  );
+  schFillSelect(
+    schById("bk-driver"),
+    sch.employees.map((item) => [item.id, item.values.full_name]),
+    values.driver_id ?? "",
+    "— выберите —",
+  );
+  schById("bk-from").value = values.date_from;
+  schById("bk-to").value = values.date_to;
+  schById("bk-note").value = values.note ?? "";
+  schSetKind(values.kind);
+  schById("bk-delete").hidden = !existing;
+  schById("bk-error").hidden = true;
+  schShowErrors({});
+  const warn = schById("bk-warn");
+  warn.hidden = !existing?.conflicts.length;
+  warn.replaceChildren(...(existing?.conflicts ?? []).map((text) => schEl("p", "", `⚠ ${text}`)));
+  dialog.showModal();
+  void schFree();
+  if (!existing && !values.vehicle_id) schById("bk-driver").focus();
+}
+
+function schSetKind(kind) {
+  sch.kind = kind;
+  const box = schById("bk-kinds");
+  box.replaceChildren(
+    ...sch.data.kinds.map((item) => {
+      const button = schEl("button", `sch-kind ${item.value}${item.value === kind ? " active" : ""}`);
+      button.type = "button";
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-checked", String(item.value === kind));
+      button.append(schIconBadge("sch-kind-icon", item.value, 13), item.label);
+      button.addEventListener("click", () => schSetKind(item.value));
+      return button;
+    }),
+  );
+}
+
+function schSuggestVehicle() {
+  const driver = sch.employees.find((item) => item.id === schById("bk-driver").value);
+  const vehicle = schById("bk-vehicle");
+  const assigned = driver?.values.vehicle_id;
+  if (!vehicle.value && assigned && [...vehicle.options].some((o) => o.value === assigned)) {
+    vehicle.value = assigned;
+  }
+}
+
+function schSuggestDriver() {
+  const driver = schById("bk-driver");
+  if (driver.value) return;
+  const match = sch.employees.find((item) => item.values.vehicle_id === schById("bk-vehicle").value);
+  if (match) driver.value = match.id;
+}
+
+async function schFree() {
+  const box = schById("bk-free");
+  const from = schById("bk-from").value;
+  const to = schById("bk-to").value || from;
+  if (!from || to < from) {
+    box.replaceChildren();
+    return;
+  }
+  try {
+    const result = await api("GET", "/api/primavtodor/bookings/free", { params: { from, to } });
+    const label = schEl("span", "", result.vehicles.length ? "Свободны на эти дни:" : "На эти дни свободных машин нет");
+    const chips = result.vehicles.map((car) => {
+      const chip = schEl("button", "sch-free-chip mono", car.plate);
+      chip.type = "button";
+      chip.title = car.model;
+      chip.addEventListener("click", () => {
+        schById("bk-vehicle").value = car.id;
+        schSuggestDriver();
+      });
+      return chip;
+    });
+    box.replaceChildren(label, ...chips);
+  } catch {
+    box.replaceChildren();
+  }
+}
+
+function schShowErrors(fields) {
+  for (const node of schById("form-booking").querySelectorAll("[data-err]")) {
+    node.textContent = fields[node.dataset.err] ?? "";
+  }
+}
+
+async function schSave(event) {
+  event.preventDefault();
+  const body = {
+    kind: sch.kind,
+    vehicle_id: schById("bk-vehicle").value,
+    driver_id: schById("bk-driver").value,
+    date_from: schById("bk-from").value,
+    date_to: schById("bk-to").value,
+    note: schById("bk-note").value,
+  };
+  const button = schById("bk-save");
+  button.disabled = true;
+  schById("bk-error").hidden = true;
+  try {
+    const saved = sch.editing
+      ? await api("PUT", `/api/primavtodor/bookings/${sch.editing.id}`, { body })
+      : await api("POST", "/api/primavtodor/bookings", { body });
+    schById("dlg-booking").close("ok");
+    if (saved.conflicts.length) toast(`Записано, но есть пересечение: ${saved.conflicts[0]}`, "error");
+    else toast("Записано в график");
+    await schLoad();
+  } catch (error) {
+    const fields = error instanceof ApiError ? error.detail?.fields : null;
+    if (fields) schShowErrors(fields);
+    const slot = schById("bk-error");
+    slot.textContent = describeError(error);
+    slot.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function schDelete() {
+  if (!sch.editing) return;
+  const ok = await askConfirm({
+    title: "Убрать выезд из графика?",
+    text: `${sch.editing.vehicle} · ${sch.editing.driver || sch.editing.kind_label} · ${sch.editing.span}`,
+    okLabel: "Убрать",
+  });
+  if (!ok) return;
+  try {
+    await api("DELETE", `/api/primavtodor/bookings/${sch.editing.id}`);
+    schById("dlg-booking").close("ok");
+    toast("Убрано из графика");
+    await schLoad();
+  } catch (error) {
+    const slot = schById("bk-error");
+    slot.textContent = describeError(error);
+    slot.hidden = false;
+  }
+}
+
+/* ---------- one typed line ---------- */
+
+async function schQuickSubmit(event) {
+  event.preventDefault();
+  const input = schById("sch-quick");
+  const text = input.value.trim();
+  if (!text) return;
+  if (sch.quick?.text === text && sch.quick.guess.ok) {
+    await schQuickSave();
+    return;
+  }
+  const button = schById("sch-quick-go");
+  button.disabled = true;
+  try {
+    const guess = await api("POST", "/api/primavtodor/bookings/parse", { body: { text } });
+    sch.quick = { text: input.value, guess };
+    schRenderQuick(guess);
+  } catch (error) {
+    toast(describeError(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function schQuickDialog(guess, over = {}) {
+  const v = { ...guess.values, ...over };
+  void schOpen({ vehicle_id: v.vehicle_id, driver_id: v.driver_id, from: v.date_from, to: v.date_to, kind: v.kind, note: v.note });
+}
+
+function schRenderQuick(guess) {
+  const box = schById("sch-quick-out");
+  box.className = `sch-quick-out ${guess.ok ? "ok" : "bad"}`;
+  const parts = [];
+  if (guess.preview) {
+    const row = guess.preview;
+    const line = schEl("div", "sch-q-line");
+    line.append(
+      row.driver ? schAvatar(row.driver) : schIconBadge("sch-chip-icon", "service", 14),
+      schEl("b", "", row.driver ? schShort(row.driver) : row.kind_label),
+      schEl("span", "mono", row.vehicle),
+      schEl("span", "", `${row.span} · ${row.days} ${plural(row.days, "день", "дня", "дней")}`),
+      schEl("span", `sch-q-kind ${row.kind}`, row.kind_label),
+    );
+    if (row.note) line.append(schEl("em", "", row.note));
+    parts.push(line);
+  }
+  for (const text of guess.problems) {
+    const p = schEl("p", "sch-q-problem");
+    p.append(schIconBadge("sch-q-ico", "warn", 14), text);
+    parts.push(p);
+  }
+  for (const text of guess.conflicts ?? []) {
+    const p = schEl("p", "sch-q-problem warn");
+    p.append(schIconBadge("sch-q-ico", "warn", 14), text);
+    parts.push(p);
+  }
+  const { drivers, vehicles } = guess.candidates;
+  if (drivers.length || vehicles.length) {
+    const row = schEl("div", "sch-q-cands");
+    for (const item of drivers) {
+      const chip = schEl("button", "sch-free-chip", item.name);
+      chip.type = "button";
+      chip.addEventListener("click", () => schQuickDialog(guess, { driver_id: item.id }));
+      row.append(chip);
+    }
+    for (const item of vehicles) {
+      const chip = schEl("button", "sch-free-chip mono", item.name);
+      chip.type = "button";
+      chip.addEventListener("click", () => schQuickDialog(guess, { vehicle_id: item.id }));
+      row.append(chip);
+    }
+    parts.push(row);
+  }
+  const actions = schEl("div", "sch-q-actions");
+  if (guess.ok) {
+    const save = schEl("button", "btn btn-primary", guess.conflicts?.length ? "Записать всё равно" : "Записать");
+    save.type = "button";
+    save.addEventListener("click", () => void schQuickSave());
+    actions.append(save, schEl("span", "sch-q-tip", "или нажмите Enter ещё раз"));
+  }
+  const edit = schEl("button", "btn", "Изменить в форме");
+  edit.type = "button";
+  edit.addEventListener("click", () => schQuickDialog(guess));
+  actions.append(edit);
+  parts.push(actions);
+  box.replaceChildren(...parts);
+}
+
+async function schQuickSave() {
+  const guess = sch.quick?.guess;
+  if (!guess?.ok) return;
+  try {
+    const saved = await api("POST", "/api/primavtodor/bookings", { body: guess.values });
+    sch.quick = null;
+    schById("sch-quick").value = "";
+    schById("sch-quick-out").replaceChildren();
+    if (saved.conflicts.length) toast(`Записано, но есть пересечение: ${saved.conflicts[0]}`, "error");
+    else toast(`Записано: ${saved.driver ? schShort(saved.driver) : saved.kind_label}, ${saved.vehicle}, ${saved.span}`);
+    await schLoad();
+    void briefLoad();
+  } catch (error) {
+    toast(describeError(error), "error");
+  }
+}
+
+/* ---------- summary for today ---------- */
+
+async function briefLoad() {
+  const box = schById("briefing");
+  try {
+    const data = await api("GET", "/api/primavtodor/briefing");
+    schById("brief-hello").textContent = `${data.greeting}, Господин`;
+    schById("brief-date").textContent = data.date_label;
+    const badge = schById("brief-badge");
+    badge.className = `brief-badge ${data.attention ? "warn" : "ok"}`;
+    badge.textContent = data.attention
+      ? `Требует внимания: ${data.attention}`
+      : "Всё спокойно";
+    const list = schById("brief-list");
+    if (data.calm) {
+      const row = schEl("li", "brief-row calm");
+      row.append(schIconBadge("brief-ico", "check", 18), schEl("span", "", "Сегодня всё в порядке: открытых листов, замечаний и выездов нет."));
+      list.replaceChildren(row);
+    } else {
+      list.replaceChildren(...data.items.map(briefRow));
+    }
+    box.hidden = false;
+  } catch {
+    box.hidden = true; // the summary is a convenience, never a reason to break the page
+  }
+}
+
+function briefRow(item) {
+  const row = schEl("li", `brief-row ${item.severity}`);
+  const button = schEl("button", "brief-btn");
+  button.type = "button";
+  const text = schEl("span", "brief-text");
+  text.append(schEl("b", "", item.title), schEl("small", "", item.detail));
+  button.append(schIconBadge("brief-ico", item.icon, 18), text, schIconBadge("brief-go", "arrow", 16));
+  button.addEventListener("click", () => void briefAct(item.action));
+  row.append(button);
+  return row;
+}
+
+async function briefAct(action) {
+  if (action.kind === "schedule") {
+    schById("schedule").scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (action.kind === "section") {
+    navigate({ module: PV_MODULE, section: action.section });
+  } else if (action.kind === "month") {
+    pvById("month-input").value = action.month;
+    pvOpenMonth();
+  } else if (action.kind === "inbox") {
+    await inboxScan(true);
+    await briefLoad();
+  }
+}
+
+/* ---------- statements dropped into the folder ---------- */
+
+async function inboxScan(manual) {
+  try {
+    const waiting = manual ? { waiting: [1] } : await api("GET", "/api/primavtodor/fuel/inbox");
+    if (!waiting.waiting.length) {
+      if (manual) toast("Во «Входящих» пусто");
+      return;
+    }
+    const result = await api("POST", "/api/primavtodor/fuel/inbox/scan");
+    for (const file of result.files) {
+      if (file.status === "loaded") {
+        toast(`${file.name}: загружено заправок ${file.counts.new}, уже были ${file.counts.duplicate}`);
+      } else if (file.status === "attention") {
+        toast(`${file.name}: не привязано ${file.counts.unmatched + file.counts.failed}. ${file.message}`, "error");
+      } else {
+        toast(`${file.name}: ${file.message}`, "error");
+      }
+    }
+  } catch (error) {
+    if (manual) toast(describeError(error), "error");
+  }
+}

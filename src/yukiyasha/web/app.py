@@ -485,6 +485,16 @@ def create_app(
             lambda: runtime.primavtodor.import_fuel_statement(content, filename, apply=apply)
         )
 
+    @application.get("/api/primavtodor/fuel/inbox")
+    def primavtodor_fuel_inbox() -> dict[str, object]:
+        """Statements dropped into the «ГСМ/Входящие» folder and not loaded yet."""
+        return primavtodor_call(runtime.primavtodor.fuel_inbox)
+
+    @application.post("/api/primavtodor/fuel/inbox/scan")
+    def primavtodor_fuel_inbox_scan() -> dict[str, object]:
+        """Load the waiting statements; a loaded file moves to «Обработано»."""
+        return primavtodor_call(runtime.primavtodor.fuel_inbox_scan)
+
     @application.get("/api/primavtodor/vehicles/{vehicle_id}/fuel-card")
     def primavtodor_fuel_card(vehicle_id: str, month: str = Query(max_length=7)) -> Response:
         """Monthly fuel card of a vehicle as an .xlsx (a sheet per driver)."""
@@ -513,6 +523,52 @@ def create_app(
             media_type=XLSX_TYPE,
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
         )
+
+    @application.get("/api/primavtodor/briefing")
+    def primavtodor_briefing() -> dict[str, object]:
+        """The morning summary: what needs attention today."""
+        return primavtodor_call(runtime.primavtodor.briefing)
+
+    @application.get("/api/primavtodor/bookings")
+    def primavtodor_bookings(
+        start: Annotated[date | None, Query()] = None,
+        days: Annotated[int, Query(ge=1, le=62)] = 14,
+        day: Annotated[date | None, Query()] = None,
+    ) -> dict[str, object]:
+        """Grid cars × days of the vehicle schedule, who is away now and who leaves this week."""
+        today = date.today()
+        return primavtodor_call(
+            lambda: runtime.primavtodor.bookings.overview(start or today, days, today, day)
+        )
+
+    @application.post("/api/primavtodor/bookings/parse")
+    def primavtodor_bookings_parse(payload: Annotated[dict[str, Any], Body()]) -> dict[str, object]:
+        """Read a typed line like «Веровский 7-9 командировка» into a booking (not stored)."""
+        text = str(payload.get("text") or "")[:300]
+        return primavtodor_call(lambda: runtime.primavtodor.bookings.parse(text, date.today()))
+
+    @application.get("/api/primavtodor/bookings/free")
+    def primavtodor_bookings_free(
+        start: Annotated[date, Query(alias="from")], end: Annotated[date, Query(alias="to")]
+    ) -> dict[str, object]:
+        return {
+            "vehicles": primavtodor_call(lambda: runtime.primavtodor.bookings.free(start, end))
+        }
+
+    @application.post("/api/primavtodor/bookings", status_code=201)
+    def primavtodor_booking_create(payload: Annotated[dict[str, Any], Body()]) -> dict[str, object]:
+        return primavtodor_call(lambda: runtime.primavtodor.bookings.create(payload))
+
+    @application.put("/api/primavtodor/bookings/{record_id}")
+    def primavtodor_booking_update(
+        record_id: str, payload: Annotated[dict[str, Any], Body()]
+    ) -> dict[str, object]:
+        return primavtodor_call(lambda: runtime.primavtodor.bookings.update(record_id, payload))
+
+    @application.delete("/api/primavtodor/bookings/{record_id}")
+    def primavtodor_booking_delete(record_id: str) -> dict[str, str]:
+        primavtodor_call(lambda: runtime.primavtodor.bookings.delete(record_id))
+        return {"status": "ok", "id": record_id}
 
     @application.get("/api/primavtodor/records/{kind}")
     def primavtodor_list(kind: str) -> dict[str, object]:

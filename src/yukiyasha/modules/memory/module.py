@@ -120,6 +120,10 @@ class MemoryModule:
             raise MemoryValidationError(
                 f"Запись памяти длиннее {MAX_MEMORY_CHARS} символов"
             )
+        if SECRET_RE.search(clean):
+            raise MemoryValidationError(
+                "Пароли, API-ключи и токены нельзя сохранять в долговременную память"
+            )
 
         existing = self.list_items()
         normalized = clean.casefold()

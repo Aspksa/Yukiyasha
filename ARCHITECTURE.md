@@ -1,132 +1,117 @@
 # Yukiyasha Architecture
 
-## Module foundation (v0.3.0)
+## v0.4.0 — permissioned modular monolith
 
-Yukiyasha is a modular monolith with explicit runtime, module and transport boundaries.
-
-### Layers
-
-1. **Core**
-   - owns runtime lifecycle and the module registry;
-   - coordinates degraded/ready/stopped state;
-   - does not depend on FastAPI or browser code.
-
-2. **Application configuration**
-   - immutable environment-driven settings;
-   - service identity and stable storage paths;
-   - package version comes from installed package metadata.
-
-3. **Modules**
-   - explicit manifest;
-   - registered/ready/failed/stopped lifecycle;
-   - health snapshots;
-   - declared permissions;
-   - no dependency on the web layer.
-
-4. **Web/API**
-   - transport and HTTP safety boundary;
-   - request body, Host and same-origin validation;
-   - security headers (CSP without inline code, no framing, no MIME sniffing) and cache rules;
-   - synchronous filesystem endpoints run through FastAPI's threadpool.
-
-### Dependency rule
+Yukiyasha remains a modular monolith:
 
 ```text
-Browser -> Web/API -> Core -> Module Registry -> Modules
-                    -> Configuration
+Browser -> Web/API -> Core Runtime -> Module Registry -> Modules
+                           |               |
+                           +-> Permissions +-> scoped capabilities
+                           +-> Audit
 ```
 
-Core and modules never import from Web/API.
+Core and modules do not import the Web/API layer.
 
-## Модуль «Помощник» (ИИ по ключу)
+## Runtime and permission boundary
 
-`modules/ai` depends only on the disk module. A `ChatProvider` (`open(messages) -> chunks`) hides
-the vendor: `OpenAICompatibleProvider` speaks the common `/chat/completions` streaming protocol
-over the standard library, so there is no extra dependency and any compatible service (cloud or
-local) works. Settings (`config.AiSettings`) come from the environment or `ai.env`; the key is
-excluded from `repr`, never persisted and scrubbed from errors.
+The runtime owns a `PermissionBroker`. Each module manifest declares permissions, and the broker
+copies those grants at registration time. Unknown subjects and undeclared capabilities are denied
+by default.
 
-- one turn = validate → build the context (persona + the history that fits the budget + the new
-  message) → connect (errors surface as HTTP statuses before any streaming starts) → stream
-  server-sent events → save the conversation only when the whole answer has arrived;
-- a bounded semaphore limits concurrent answers; the slot is released when the stream ends or
-  the response is torn down;
-- the module reads no business data. Giving it read-only tools (waybills, fuel, timesheet) is a
-  separate step that needs the permission boundary first.
+Raw service objects stay inside the runtime composition root. Dependencies receive capability
+views instead:
+
+- `DiskAccess` checks both a permission (`disk.read/write/delete`) and an allowed path root;
+- Примавтодор receives a disk view limited to `projects/work/Примавтодор/**`;
+- the AI module receives a disk view limited to `ai/**`;
+- `PrimavtodorReadAccess` exposes only list/get records, timesheet and settings and requires
+  `primavtodor.read`.
+
+The Web/API layer is trusted application code and still calls runtime modules directly. The
+boundary is specifically for module-to-module access and future AI capabilities.
+
+## Audit
+
+`AuditLog` is runtime-owned and writes one immutable JSON event per disclosure under:
+
+```text
+system/audit/YYYY-MM-DD/<timestamp>-<id>.json
+```
+
+AI tool execution is fail-closed: a result is returned to the provider only after the allowed
+audit event is persisted. Audit metadata records the subject, tool name, outcome and identifiers;
+it does not contain the returned business payload or API key.
+
+## Модуль «Помощник»
+
+The assistant keeps persona and conversations on its scoped `ai/**` disk capability.
+
+For ordinary chat:
+1. build persona + bounded history + new user message;
+2. stream the final response from the configured OpenAI-compatible provider;
+3. save the completed turn only after the whole answer arrives.
+
+For a Примавтодор-related question:
+1. local keyword routing decides whether tools are relevant;
+2. a standard non-streaming OpenAI-compatible `tools` planning request is made;
+3. at most four requested local tools are executed;
+4. sensitive fields are masked;
+5. each disclosure is audited;
+6. tool result messages are sent back to the provider;
+7. the final answer is streamed normally.
+
+Providers that reject the standard `tools` fields with HTTP 400/422 fall back to ordinary chat.
+
+Available tools are intentionally read-only:
+- `primavtodor_list_records`;
+- `primavtodor_get_record`;
+- `primavtodor_timesheet`;
+- `primavtodor_settings`.
+
+Sensitive keys currently masked before provider transmission:
+- phone;
+- personnel number;
+- fuel-card/card number fields.
+
+There is no create/update/delete Примавтодор tool.
 
 ## Модуль Примавтодор
 
-Work-project module. It depends only on the disk module (never on the web layer), is registered
-right after it (modules start in registration order and stop in reverse) and owns the folder
-`projects/work/Примавтодор`. Each section is one sub-folder; all data lives on the disk and the
-module reaches it only through the disk's public API.
+Примавтодор owns `projects/work/Примавтодор` and ten sections. Structured entities remain:
+employees, vehicles, waybills and fuel; timesheet is computed from waybills plus manual marks.
 
-| Group | Sections (in data-flow order) |
-| --- | --- |
-| Учёт | Путевые листы → Горюче-смазочные материалы → Сотрудники → Гараж → Табель |
-| Документы | Договора, Счёт-оферта, Служебные записки, Приказы, Распоряжения |
-
-Section ids are ASCII (`waybills`, `fuel`, `employees`, `garage`, `timesheet`, `contracts`,
-`invoice_offer`, `memos`, `orders`, `directives`); titles and folder names are Russian. The module id is
-`primavtodor`. Documents are plain text files addressed by a single file name inside a section;
-the disk still validates every path. Declared permissions (`disk.read`, `disk.write`,
-`disk.delete`) are metadata until the central permission boundary exists.
-
-### Linked records
-
-`schema.py` is the single source of truth for fields, relations and list columns; the backend
-validates against it and the browser renders forms and tables from `/api/primavtodor/schema`.
-
-```text
-employee (driver) ── vehicle_id ──▶ vehicle              fuel_card_number (unique)
-waybill ── driver_id ──▶ employee, ── vehicle_id ──▶ vehicle
-fuel    ── waybill_id ──▶ waybill   (driver, vehicle, card number derived and stored)
-timesheet = waybills (auto "Я") + manual marks per month
-```
-
-- one JSON file per record in the section folder; all I/O goes through the disk's public API;
-- cross-record rules live in `records.py` (driver flag, closing a waybill, card required for
-  fuel, uniqueness); deleting a referenced record is refused (`409`);
-- computed values (distance, consumption, norm, deviation, amount) are derived on read and never
-  stored, so they cannot go stale; the fuel record keeps the card number it was issued on;
-- the timesheet stores only manual marks (`Табель/<ГГГГ-ММ>.json`);
-- fuel norms are seasonal: a vehicle has `norm_summer` and `norm_winter`; a waybill stores its own
-  `season` and is computed with that season's norm. The module-wide switch
-  (`Примавтодор/settings.json`) only changes the *active* norm shown for vehicles, the default for
-  new waybills and the season of open waybills, never of closed ones (history stays exact);
-- records written by earlier versions are upgraded in memory when read (`RecordStore._upgrade`)
-  and persisted in the new shape the next time they are saved.
-
-Note: a failing module start rolls back every module started before it (registry semantics), so a
-file (not a folder) named like a section degrades the whole runtime.
+Its records preserve the existing invariants:
+- schema-driven validation;
+- validated references and uniqueness;
+- referenced records cannot be deleted;
+- computed values are derived on read;
+- closed waybills keep their historical season;
+- all storage goes through its scoped disk capability in the runtime.
 
 ## Диск Yukiyasha
 
-Default root:
+Default root is `~/.yukiyasha/disk` unless `YUKIYASHA_DISK_DIR` is set.
 
-```text
-~/.yukiyasha/disk
-```
+Storage invariants:
+- absolute paths, traversal and symlink escapes are rejected;
+- atomic replacement writes;
+- race-safe no-overwrite publication with fallback;
+- exact UTF-8 bytes/newlines;
+- internal temp files are hidden/cleaned safely;
+- built-in project directories are protected;
+- text API limit is 1 MiB.
 
-Override with `YUKIYASHA_DISK_DIR`.
+## Web/API boundary
 
-Security and consistency invariants:
-- absolute paths and traversal outside the disk root are rejected;
-- symlink escapes are rejected;
-- replacement writes use a temporary file in the destination directory and `os.replace`;
-- no-overwrite publication uses an atomic hard-link operation;
-- UTF-8 bytes are read/written directly so line endings are never translated by the OS;
-- text API reads/writes are capped at 1 MiB;
-- HTTP request bodies are capped at 2 MiB before application parsing;
-- internal temporary files are recognised by exact name shape, never by prefix alone;
-- built-in project directories are protected by file identity, not by path spelling;
-- the fully resolved path (not only symlink flags) must stay inside the root;
-- deleting the disk root is forbidden;
-- permission, conflict, invalid-path and size failures are represented explicitly.
+FastAPI provides:
+- TrustedHost validation;
+- same-origin protection for disk reads and API mutations;
+- 2 MiB request-body limit before application parsing;
+- CSP, no-framing, no-MIME-sniffing and cache protections;
+- synchronous filesystem endpoints executed in FastAPI's threadpool.
 
-Declared permissions remain metadata in v0.3.0:
-- `disk.read`
-- `disk.write`
-- `disk.delete`
+## Next architecture step
 
-The next architecture step is enforcing those declarations through a central permission boundary.
+Add a permissioned **Memory module**, then introduce a proposal/approval layer for AI-assisted
+writes. The assistant may propose a mutation, but only explicit human approval may execute it.

@@ -8,7 +8,7 @@ Overlaps are shown, never forbidden: the owner decides.
 from datetime import date, timedelta
 
 from yukiyasha.modules.disk import DiskModule
-from yukiyasha.modules.primavtodor import calendar_ru
+from yukiyasha.modules.primavtodor import calendar_ru, quickadd
 from yukiyasha.modules.primavtodor.errors import RecordValidationError
 from yukiyasha.modules.primavtodor.records import (
     Records,
@@ -359,6 +359,35 @@ class Bookings:
             if employee.get("is_driver") and current == vehicle["id"]:
                 return str(employee["full_name"])
         return ""
+
+    def parse(self, text: str, today: date) -> dict[str, object]:
+        """Read one typed line into a booking to confirm; nothing is stored."""
+        employees = self._data.snapshot(KIND_EMPLOYEES)
+        people = [p for p in employees if p.get("is_driver") and p.get("active", True)]
+        cars = [v for v in self._data.snapshot(KIND_VEHICLES) if v.get("active", True)]
+        car_of: dict[str, str] = {}
+        driver_of: dict[str, str] = {}
+        for person in people:
+            current = vehicle_at(person, today.isoformat()) or person.get("vehicle_id")
+            if current:
+                car_of[str(person["id"])] = str(current)
+                driver_of.setdefault(str(current), str(person["id"]))
+        guess = quickadd.parse(text, today, people, cars, car_of, driver_of)
+        values: dict[str, str] = guess["values"]  # type: ignore[assignment]
+        if values["vehicle_id"] and values["date_from"] and values["date_to"]:
+            draft: dict[str, object] = {**values, "id": "draft"}
+            absent = self._timesheet.absences(
+                date.fromisoformat(values["date_from"]), date.fromisoformat(values["date_to"])
+            )
+            guess["conflicts"] = self._conflicts(draft, self._all(), absent)
+            guess["preview"] = self._row(
+                draft,
+                [],
+                {str(p["id"]): p for p in people},
+                {str(v["id"]): v for v in cars},
+                [],
+            )
+        return guess
 
     def free(self, start: date, end: date) -> list[dict[str, object]]:
         """Cars with nothing booked in the range."""

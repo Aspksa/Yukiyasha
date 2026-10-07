@@ -45,6 +45,18 @@ class DiskAccess:
         self._require_path(relative_path)
         return self._disk.read_text(relative_path)
 
+    def read_bytes(self, relative_path: str) -> bytes:
+        self._broker.require(self._subject, "disk.read")
+        self._require_path(relative_path)
+        return self._disk.read_bytes(relative_path)
+
+    def move(self, source: str, target: str) -> None:
+        for permission in ("disk.read", "disk.write", "disk.delete"):
+            self._broker.require(self._subject, permission)
+        self._require_path(source)
+        self._require_path(target)
+        self._disk.move(source, target)
+
     def make_dir(self, relative_path: str) -> None:
         self._broker.require(self._subject, "disk.write")
         self._require_path(relative_path)

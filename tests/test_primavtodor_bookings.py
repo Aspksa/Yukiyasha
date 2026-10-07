@@ -121,3 +121,89 @@ def test_timesheet_leave_and_sick_days_take_the_driver_off_the_list(
 
     back = module.bookings.overview(date(2026, 10, 5), 7, date(2026, 10, 8), date(2026, 10, 11))
     assert len(back["free"]["drivers"]) == 1  # leave is over, the trip is over
+
+
+# ----- one typed line -----
+
+
+@pytest.fixture
+def crew(module: PrimavtodorModule) -> dict:
+    hino = make_vehicle(module, plate="С 303 СС", model="HINO 500")
+    lexus = make_vehicle(module, plate="Л 777 ЛЛ", model="Lexus LX")
+    verovsky = module.data.create(
+        "employees",
+        {"full_name": "Веровский Игорь Павлович", "is_driver": True, "vehicle_id": hino["id"]},
+    )
+    igor = module.data.create(
+        "employees",
+        {"full_name": "Орлов Игорь Сергеевич", "is_driver": True, "vehicle_id": lexus["id"]},
+    )
+    return {"hino": hino, "lexus": lexus, "verovsky": verovsky, "igor": igor}
+
+
+TODAY = date(2026, 10, 6)
+
+
+def test_surname_dates_and_kind_make_a_booking_with_the_drivers_car(module, crew) -> None:
+    guess = module.bookings.parse("Веровский 7-9 командировка Находка", TODAY)
+
+    assert guess["ok"], guess["problems"]
+    assert guess["values"] == {
+        "vehicle_id": crew["hino"]["id"],
+        "driver_id": crew["verovsky"]["id"],
+        "date_from": "2026-10-07",
+        "date_to": "2026-10-09",
+        "kind": "trip",
+        "note": "Находка",
+    }
+    assert guess["preview"]["driver"] == "Веровский Игорь Павлович"
+
+
+def test_declension_plate_and_the_other_car(module, crew) -> None:
+    guess = module.bookings.parse("дай Веровскому лексус с 10 по 12 занят", TODAY)
+
+    assert guess["ok"], guess["problems"]
+    assert guess["values"]["driver_id"] == crew["verovsky"]["id"]
+    assert guess["values"]["vehicle_id"] == crew["lexus"]["id"]  # named, not the assigned one
+    assert guess["values"]["kind"] == "busy"
+
+    by_plate = module.bookings.parse("л777лл 8", TODAY)
+    assert by_plate["values"]["vehicle_id"] == crew["lexus"]["id"]
+    assert by_plate["values"]["driver_id"] == crew["igor"]["id"]  # the car's driver
+    assert by_plate["values"]["date_from"] == by_plate["values"]["date_to"] == "2026-10-08"
+
+
+def test_an_ambiguous_name_is_not_guessed(module, crew) -> None:
+    guess = module.bookings.parse("Игорь 7-9", TODAY)
+
+    assert not guess["ok"]
+    assert {c["name"] for c in guess["candidates"]["drivers"]} == {
+        "Веровский Игорь Павлович",
+        "Орлов Игорь Сергеевич",
+    }
+
+
+def test_dates_cross_the_month_and_unknown_people_are_reported(module, crew) -> None:
+    guess = module.bookings.parse("Веровский 30-2", date(2026, 10, 28))
+    assert (guess["values"]["date_from"], guess["values"]["date_to"]) == (
+        "2026-10-30",
+        "2026-11-02",
+    )
+
+    nobody = module.bookings.parse("Иванов 7-9", TODAY)
+    assert not nobody["ok"] and any("водител" in p for p in nobody["problems"])
+    no_dates = module.bookings.parse("Веровский", TODAY)
+    assert not no_dates["ok"] and any("дат" in p for p in no_dates["problems"])
+
+
+def test_tomorrow_service_and_conflict_preview(module, crew) -> None:
+    module.bookings.create(
+        {"vehicle_id": crew["hino"]["id"], "driver_id": crew["verovsky"]["id"],
+         "date_from": "2026-10-07", "date_to": "2026-10-07", "kind": "busy"}
+    )  # fmt: skip
+
+    guess = module.bookings.parse("Веровский завтра", TODAY)
+    assert guess["values"]["date_from"] == "2026-10-07" and guess["conflicts"]
+
+    service = module.bookings.parse("хино 12-13 ремонт", TODAY)
+    assert service["ok"] and service["values"]["kind"] == "service"

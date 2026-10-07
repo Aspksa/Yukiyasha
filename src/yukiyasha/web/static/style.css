@@ -1258,3 +1258,48 @@ dialog input[type="text"] {
 .sch-chip.out.leave { --c: var(--ok); }
 .sch-free-absent { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0 0; padding-top: 12px; color: var(--muted); font-size: 13.5px; border-top: 1px dashed var(--line-strong); }
 .sch-free-absent b { color: var(--text); }
+
+/* ---------- сводка на сегодня ---------- */
+.briefing { margin: 18px 0 0; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.brief-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.brief-hello { margin: 0; font-size: 20px; font-weight: 700; }
+.brief-date { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.brief-date::first-letter { text-transform: uppercase; }
+.brief-badge { padding: 5px 12px; font-size: 13px; font-weight: 700; border-radius: 999px; }
+.brief-badge.ok { color: var(--ok); background: color-mix(in oklab, var(--ok) 14%, transparent); }
+.brief-badge.warn { color: var(--warn); background: color-mix(in oklab, var(--warn) 16%, transparent); }
+.brief-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.brief-row { --c: var(--accent); }
+.brief-row.error { --c: var(--danger); }
+.brief-row.warn { --c: var(--warn); }
+.brief-row.info { --c: var(--sch-trip, var(--accent)); }
+.brief-row.calm { --c: var(--ok); display: flex; align-items: center; gap: 12px; grid-column: 1 / -1; color: var(--muted); }
+.brief-btn { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; text-align: left; font: inherit; color: var(--text); background: color-mix(in oklab, var(--c) 9%, var(--surface)); border: 1px solid color-mix(in oklab, var(--c) 35%, transparent); border-radius: 12px; cursor: pointer; transition: transform .12s; }
+.brief-btn:hover { transform: translateY(-1px); border-color: var(--c); }
+.brief-ico { display: grid; place-items: center; flex: none; width: 38px; height: 38px; color: #fff; background: var(--c); border-radius: 11px; }
+.brief-text { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.3; }
+.brief-text b { font-size: 14.5px; }
+.brief-text small { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brief-go { color: var(--muted); }
+
+/* ---------- быстрая запись ---------- */
+.sch-quick { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 6px 6px 6px 14px; background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 14px; }
+.sch-quick:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.sch-quick .icon { flex: none; color: var(--accent); }
+.sch-quick input { flex: 1; min-width: 0; padding: 8px 0; font: inherit; color: var(--text); background: transparent; border: 0; outline: 0; }
+.sch-quick-out:empty { display: none; }
+.sch-quick-out { margin-top: 10px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: 12px; }
+.sch-quick-out.ok { border-left-color: var(--ok); }
+.sch-q-line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.sch-q-line span { color: var(--muted); font-size: 13.5px; }
+.sch-q-line .mono { font-family: var(--font-mono); color: var(--text); font-weight: 600; }
+.sch-q-line em { font-style: normal; color: var(--text); }
+.sch-q-kind { padding: 2px 10px; font-weight: 600; color: var(--text) !important; background: color-mix(in oklab, var(--sch-trip) 25%, transparent); border-radius: 999px; }
+.sch-q-kind.busy { background: color-mix(in oklab, var(--sch-busy) 25%, transparent); }
+.sch-q-kind.service { background: color-mix(in oklab, var(--sch-service) 25%, transparent); }
+.sch-q-problem { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; color: var(--warn); font-size: 13.5px; }
+.sch-q-ico { display: grid; place-items: center; }
+.sch-q-cands { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.sch-q-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.sch-q-tip { color: var(--faint); font-size: 12.5px; }
+@media (max-width: 640px) { .brief-list { grid-template-columns: 1fr; } .sch-quick .btn { display: none; } }

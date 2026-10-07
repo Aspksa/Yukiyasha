@@ -177,6 +177,16 @@
           </div>
         </header>
         <p class="module-lead">Каждый раздел — папка на Диске Yukiyasha. Откройте раздел, чтобы создавать и редактировать документы.</p>
+        <section class="briefing" id="briefing" aria-label="Сводка на сегодня" hidden>
+          <header class="brief-head">
+            <div>
+              <p class="brief-hello" id="brief-hello"></p>
+              <p class="brief-date" id="brief-date"></p>
+            </div>
+            <span class="brief-badge" id="brief-badge"></span>
+          </header>
+          <ul class="brief-list" id="brief-list"></ul>
+        </section>
         <section class="schedule" id="schedule" aria-label="График машин">
           <header class="sch-head">
             <div class="sch-title">
@@ -194,6 +204,12 @@
               <button class="btn btn-primary" id="sch-new" type="button">Записать выезд</button>
             </div>
           </header>
+          <form class="sch-quick" id="sch-quick-form" autocomplete="off">
+            <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
+            <input type="text" id="sch-quick" maxlength="300" placeholder="Быстро: Веровский 7-9 командировка Находка · Игорь с 5 по 7 · хино 12-13 ремонт" aria-label="Быстрая запись выезда">
+            <button class="btn" type="submit" id="sch-quick-go">Разобрать</button>
+          </form>
+          <div class="sch-quick-out" id="sch-quick-out" aria-live="polite"></div>
           <div class="sch-stats" id="sch-stats"></div>
           <div class="sch-now" id="sch-now" aria-live="polite"></div>
           <div class="sch-scroll"><div class="sch-grid" id="sch-grid"></div></div>

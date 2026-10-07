@@ -5,6 +5,20 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- **Quick booking from one line** in the schedule: type what you hear on the phone, «Веровский
+  7-9 командировка Находка», «Игорь с 5 по 7», «хино 12-13 ремонт» or «завтра», and the line is
+  read into a driver, a car, dates and a type. The car comes from the driver (and the driver from
+  the car) when only one is named, declensions and Latin/Russian makes are understood, an
+  ambiguous name is offered as choices and never guessed. A preview shows overlaps; Enter again
+  books it. API: `POST /api/primavtodor/bookings/parse`.
+- **Summary for today** at the top of the Примавтодор page: who is away, who leaves tomorrow,
+  drivers on leave or sick (from the timesheet), overlaps, waybills left open, statements waiting
+  in the inbox and the open findings of the month (the previous month too during its first ten
+  days); each line opens the place to act. API: `GET /api/primavtodor/briefing`.
+- **Statement inbox:** drop the provider's .xls/.xlsx into «ГСМ/Входящие» and it is loaded when
+  the page opens (or from the summary). A file that loaded cleanly moves to «Обработано»; one with
+  operations that could not be matched stays with the reasons. Nothing is created twice. The disk
+  module gained `read_bytes` (20 MiB) and `move` (never overwrites) for it.
 - **График машин** at the top of the Примавтодор page: a car × day grid showing who has which
   car and for how long. A booking is a driver, a car, *с … по …* and a type (business trip, car
   taken for the whole day, or repair/service); there is no "who asked" field. Drag over free days

@@ -12,6 +12,7 @@ from yukiyasha.modules.registry import ModuleState
 from yukiyasha.version import get_version
 
 MAX_TEXT_BYTES = 1_048_576
+MAX_BINARY_BYTES = 20 * 1_048_576  # spreadsheets a module reads, never edits in place
 TEMP_PREFIX = ".yukiyasha-"
 # tempfile.mkstemp() appends exactly eight characters from [a-z0-9_]. Only names of this exact
 # shape are internal; ordinary user files that merely start with the prefix are left alone.
@@ -173,6 +174,48 @@ class DiskModule:
             return payload.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise DiskEncodingError("File is not valid UTF-8 text") from exc
+
+    def read_bytes(self, relative_path: str) -> bytes:
+        """Raw content of a file (a spreadsheet dropped into a folder), up to 20 MiB."""
+        self._require_ready()
+        path = self._resolve(relative_path)
+        try:
+            if not path.exists():
+                raise FileNotFoundError(relative_path)
+            if not path.is_file():
+                raise IsADirectoryError(relative_path)
+            with path.open("rb") as handle:
+                payload = handle.read(MAX_BINARY_BYTES + 1)
+        except (FileNotFoundError, IsADirectoryError):
+            raise
+        except OSError as exc:
+            raise self._translate_os_error(exc) from exc
+        if len(payload) > MAX_BINARY_BYTES:
+            raise DiskTooLargeError("File exceeds the 20 MiB limit")
+        return payload
+
+    def move(self, source: str, target: str) -> None:
+        """Rename a file inside the disk; an existing target is never overwritten."""
+        self._require_ready()
+        src = self._resolve(source)
+        dst = self._resolve(target)
+        if src == self.root.resolve() or dst == self.root.resolve():
+            raise DiskPathError("A file path is required")
+        try:
+            if not src.exists():
+                raise FileNotFoundError(source)
+            if not src.is_file():
+                raise DiskConflictError("Only files can be moved")
+            if dst.exists():
+                raise DiskConflictError("Target already exists")
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            os.rename(src, dst)
+        except (FileNotFoundError, DiskError):
+            raise
+        except (FileExistsError, NotADirectoryError) as exc:
+            raise DiskConflictError("Target path conflicts with an existing file") from exc
+        except OSError as exc:
+            raise self._translate_os_error(exc) from exc
 
     def write_text(self, relative_path: str, content: str, *, overwrite: bool = True) -> None:
         self._require_ready()

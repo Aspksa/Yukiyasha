@@ -11,6 +11,11 @@ const SCH_ICONS = {
   free: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M8 12.2l2.8 2.8L16 9.5",
   calendar: "M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4",
   sick: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 8v8 M8 12h8",
+  warn: "M12 3l10 18H2z M12 10v5 M12 18v.2",
+  file: "M6 3h8l4 4v14H6z M14 3v4h4 M9 12h6 M9 16h6",
+  fuel: "M12 3c3.5 4 6 6.8 6 10a6 6 0 0 1-12 0c0-3.2 2.5-6 6-10z",
+  check: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M8 12.2l2.8 2.8L16 9.5",
+  arrow: "M5 12h14 M13 6l6 6-6 6",
   leave: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M19 5l-2 2 M7 17l-2 2",
 };
 
@@ -55,6 +60,7 @@ const sch = {
   kind: "trip",
   employees: [],
   controller: null,
+  quick: null, // { text, guess } of the line that was read and waits for Enter
 };
 
 const schById = (id) => document.getElementById(id);
@@ -126,6 +132,13 @@ function schWire() {
   schById("bk-driver").addEventListener("change", schSuggestVehicle);
   schById("bk-vehicle").addEventListener("change", schSuggestDriver);
   document.addEventListener("pointerup", schEndDrag);
+  schById("sch-quick-form").addEventListener("submit", (event) => void schQuickSubmit(event));
+  schById("sch-quick").addEventListener("input", () => {
+    if (sch.quick && sch.quick.text !== schById("sch-quick").value) {
+      sch.quick = null;
+      schById("sch-quick-out").replaceChildren();
+    }
+  });
 }
 
 function schShift(days) {
@@ -462,7 +475,7 @@ function schFillSelect(select, options, selected, blank) {
   select.value = selected ?? "";
 }
 
-async function schOpen({ id = null, vehicle_id = "", driver_id = "", from = "", to = "" }) {
+async function schOpen({ id = null, vehicle_id = "", driver_id = "", from = "", to = "", kind = "trip", note = "" }) {
   const dialog = schById("dlg-booking");
   if (dialog.open) return;
   try {
@@ -478,7 +491,7 @@ async function schOpen({ id = null, vehicle_id = "", driver_id = "", from = "", 
     return;
   }
   sch.editing = existing;
-  const values = existing ?? { vehicle_id, driver_id, date_from: from, date_to: to || from, kind: "trip", note: "" };
+  const values = existing ?? { vehicle_id, driver_id, date_from: from, date_to: to || from, kind, note };
 
   schById("dlg-booking-title").textContent = existing ? "Изменить выезд" : "Выезд машины";
   schFillSelect(
@@ -622,5 +635,187 @@ async function schDelete() {
     const slot = schById("bk-error");
     slot.textContent = describeError(error);
     slot.hidden = false;
+  }
+}
+
+/* ---------- one typed line ---------- */
+
+async function schQuickSubmit(event) {
+  event.preventDefault();
+  const input = schById("sch-quick");
+  const text = input.value.trim();
+  if (!text) return;
+  if (sch.quick?.text === text && sch.quick.guess.ok) {
+    await schQuickSave();
+    return;
+  }
+  const button = schById("sch-quick-go");
+  button.disabled = true;
+  try {
+    const guess = await api("POST", "/api/primavtodor/bookings/parse", { body: { text } });
+    sch.quick = { text: input.value, guess };
+    schRenderQuick(guess);
+  } catch (error) {
+    toast(describeError(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function schQuickDialog(guess, over = {}) {
+  const v = { ...guess.values, ...over };
+  void schOpen({ vehicle_id: v.vehicle_id, driver_id: v.driver_id, from: v.date_from, to: v.date_to, kind: v.kind, note: v.note });
+}
+
+function schRenderQuick(guess) {
+  const box = schById("sch-quick-out");
+  box.className = `sch-quick-out ${guess.ok ? "ok" : "bad"}`;
+  const parts = [];
+  if (guess.preview) {
+    const row = guess.preview;
+    const line = schEl("div", "sch-q-line");
+    line.append(
+      row.driver ? schAvatar(row.driver) : schIconBadge("sch-chip-icon", "service", 14),
+      schEl("b", "", row.driver ? schShort(row.driver) : row.kind_label),
+      schEl("span", "mono", row.vehicle),
+      schEl("span", "", `${row.span} · ${row.days} ${plural(row.days, "день", "дня", "дней")}`),
+      schEl("span", `sch-q-kind ${row.kind}`, row.kind_label),
+    );
+    if (row.note) line.append(schEl("em", "", row.note));
+    parts.push(line);
+  }
+  for (const text of guess.problems) {
+    const p = schEl("p", "sch-q-problem");
+    p.append(schIconBadge("sch-q-ico", "warn", 14), text);
+    parts.push(p);
+  }
+  for (const text of guess.conflicts ?? []) {
+    const p = schEl("p", "sch-q-problem warn");
+    p.append(schIconBadge("sch-q-ico", "warn", 14), text);
+    parts.push(p);
+  }
+  const { drivers, vehicles } = guess.candidates;
+  if (drivers.length || vehicles.length) {
+    const row = schEl("div", "sch-q-cands");
+    for (const item of drivers) {
+      const chip = schEl("button", "sch-free-chip", item.name);
+      chip.type = "button";
+      chip.addEventListener("click", () => schQuickDialog(guess, { driver_id: item.id }));
+      row.append(chip);
+    }
+    for (const item of vehicles) {
+      const chip = schEl("button", "sch-free-chip mono", item.name);
+      chip.type = "button";
+      chip.addEventListener("click", () => schQuickDialog(guess, { vehicle_id: item.id }));
+      row.append(chip);
+    }
+    parts.push(row);
+  }
+  const actions = schEl("div", "sch-q-actions");
+  if (guess.ok) {
+    const save = schEl("button", "btn btn-primary", guess.conflicts?.length ? "Записать всё равно" : "Записать");
+    save.type = "button";
+    save.addEventListener("click", () => void schQuickSave());
+    actions.append(save, schEl("span", "sch-q-tip", "или нажмите Enter ещё раз"));
+  }
+  const edit = schEl("button", "btn", "Изменить в форме");
+  edit.type = "button";
+  edit.addEventListener("click", () => schQuickDialog(guess));
+  actions.append(edit);
+  parts.push(actions);
+  box.replaceChildren(...parts);
+}
+
+async function schQuickSave() {
+  const guess = sch.quick?.guess;
+  if (!guess?.ok) return;
+  try {
+    const saved = await api("POST", "/api/primavtodor/bookings", { body: guess.values });
+    sch.quick = null;
+    schById("sch-quick").value = "";
+    schById("sch-quick-out").replaceChildren();
+    if (saved.conflicts.length) toast(`Записано, но есть пересечение: ${saved.conflicts[0]}`, "error");
+    else toast(`Записано: ${saved.driver ? schShort(saved.driver) : saved.kind_label}, ${saved.vehicle}, ${saved.span}`);
+    await schLoad();
+    void briefLoad();
+  } catch (error) {
+    toast(describeError(error), "error");
+  }
+}
+
+/* ---------- summary for today ---------- */
+
+async function briefLoad() {
+  const box = schById("briefing");
+  try {
+    const data = await api("GET", "/api/primavtodor/briefing");
+    schById("brief-hello").textContent = `${data.greeting}, Господин`;
+    schById("brief-date").textContent = data.date_label;
+    const badge = schById("brief-badge");
+    badge.className = `brief-badge ${data.attention ? "warn" : "ok"}`;
+    badge.textContent = data.attention
+      ? `Требует внимания: ${data.attention}`
+      : "Всё спокойно";
+    const list = schById("brief-list");
+    if (data.calm) {
+      const row = schEl("li", "brief-row calm");
+      row.append(schIconBadge("brief-ico", "check", 18), schEl("span", "", "Сегодня всё в порядке: открытых листов, замечаний и выездов нет."));
+      list.replaceChildren(row);
+    } else {
+      list.replaceChildren(...data.items.map(briefRow));
+    }
+    box.hidden = false;
+  } catch {
+    box.hidden = true; // the summary is a convenience, never a reason to break the page
+  }
+}
+
+function briefRow(item) {
+  const row = schEl("li", `brief-row ${item.severity}`);
+  const button = schEl("button", "brief-btn");
+  button.type = "button";
+  const text = schEl("span", "brief-text");
+  text.append(schEl("b", "", item.title), schEl("small", "", item.detail));
+  button.append(schIconBadge("brief-ico", item.icon, 18), text, schIconBadge("brief-go", "arrow", 16));
+  button.addEventListener("click", () => void briefAct(item.action));
+  row.append(button);
+  return row;
+}
+
+async function briefAct(action) {
+  if (action.kind === "schedule") {
+    schById("schedule").scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (action.kind === "section") {
+    navigate({ module: PV_MODULE, section: action.section });
+  } else if (action.kind === "month") {
+    pvById("month-input").value = action.month;
+    pvOpenMonth();
+  } else if (action.kind === "inbox") {
+    await inboxScan(true);
+    await briefLoad();
+  }
+}
+
+/* ---------- statements dropped into the folder ---------- */
+
+async function inboxScan(manual) {
+  try {
+    const waiting = manual ? { waiting: [1] } : await api("GET", "/api/primavtodor/fuel/inbox");
+    if (!waiting.waiting.length) {
+      if (manual) toast("Во «Входящих» пусто");
+      return;
+    }
+    const result = await api("POST", "/api/primavtodor/fuel/inbox/scan");
+    for (const file of result.files) {
+      if (file.status === "loaded") {
+        toast(`${file.name}: загружено заправок ${file.counts.new}, уже были ${file.counts.duplicate}`);
+      } else if (file.status === "attention") {
+        toast(`${file.name}: не привязано ${file.counts.unmatched + file.counts.failed}. ${file.message}`, "error");
+      } else {
+        toast(`${file.name}: ${file.message}`, "error");
+      }
+    }
+  } catch (error) {
+    if (manual) toast(describeError(error), "error");
   }
 }

@@ -2,6 +2,31 @@
 
 All notable changes to Yukiyasha are documented here.
 
+## [0.6.0] - 2026-10-07
+
+AI-assisted Примавтодор mutations now go through a concrete proposal and separate human approval.
+
+### Added
+- New **Предложения** module with scoped `proposals/**` storage and lifecycle health.
+- Validated create/update/delete proposals for structured Примавтодор records.
+- Partial update proposals are expanded to a full normalized target state before persistence.
+- Source fingerprints for update/delete proposals; changed targets become `stale` on approval.
+- Human proposal API: list/get, approve and reject.
+- Assistant capability `proposal.create` and the `primavtodor_propose_change` tool.
+- Dry-run `Records.validate()` for schema/reference/uniqueness checks without mutation.
+- Migration of an untouched v0.5 default persona to proposal-aware rules.
+
+### Security
+- The assistant has no direct Примавтодор write/delete capability and no proposal apply/reject tool.
+- Proposal execution re-checks the current user message for mutation intent.
+- Approval/rejection uses the existing same-origin mutation boundary.
+- Completed proposals are one-shot; stale proposals never overwrite newer record state.
+- Proposal audit events omit the proposed business payload.
+
+### Changed
+- Runtime module order is now Disk → Memory → Примавтодор → Proposals → Assistant.
+- Project architecture now treats business writes as a two-phase propose/approve workflow.
+
 ## [0.5.0] - 2026-10-07
 
 Long-term assistant memory behind the same permission and audit boundaries as business tools.

@@ -26,7 +26,7 @@ class RequestBodyLimitMiddleware:
         if content_length is not None:
             try:
                 if int(content_length) > self.max_bytes:
-                    await self._reject(send)
+                    await self._reject(scope, receive, send)
                     return
             except ValueError:
                 response = JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
@@ -55,6 +55,8 @@ class RequestBodyLimitMiddleware:
 
         await self.app(scope, replay, send)
 
-    async def _reject(self, send: Send) -> None:
+    async def _reject(
+        self, scope: dict[str, Any], receive: Receive, send: Send
+    ) -> None:
         response = JSONResponse({"detail": "Request body too large"}, status_code=413)
-        await response({"type": "http"}, lambda: None, send)
+        await response(scope, receive, send)

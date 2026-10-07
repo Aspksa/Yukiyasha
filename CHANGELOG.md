@@ -2,6 +2,32 @@
 
 All notable changes to Yukiyasha are documented here.
 
+## [0.5.0] - 2026-10-07
+
+Long-term assistant memory behind the same permission and audit boundaries as business tools.
+
+### Added
+- New **Memory** module with scoped `memory/**` storage, lifecycle health and one JSON file per
+  durable memory item.
+- Exact-text deduplication, local token-overlap retrieval, 2,000-character item limit and
+  500-item store limit.
+- AI capabilities `memory.read`, `memory.write` and `memory.delete` through `MemoryAccess`.
+- Guarded AI tools `memory_search`, `memory_remember` and `memory_forget`.
+- Transparent memory API: list, search, add and remove entries.
+- Migration of an untouched v0.4 default persona to the new memory-aware rules.
+
+### Security
+- Memory write/delete tools are advertised and executed only for explicit remember/forget intent
+  in the current user message.
+- Credential-like material is rejected before long-term persistence.
+- Memory audit records omit both stored text and search queries.
+- The assistant still has no create/update/delete capability over Примавтодор.
+
+### Changed
+- Runtime module order is now Disk → Memory → Примавтодор → Assistant.
+- Assistant tool status is `guarded` rather than globally read-only because memory mutations are
+  allowed only under the explicit-intent boundary.
+
 ## [0.4.0] - 2026-10-07
 
 Permissions, audited read-only Примавтодор tools for the assistant, and the Yukiyasha character.

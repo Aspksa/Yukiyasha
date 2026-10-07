@@ -823,3 +823,42 @@ def test_a_streamed_post_response_completes_through_the_middleware(
         response = test_client.post("/api/test-stream", json={})
 
     assert response.text == "data: 1\n\ndata: 2\n\n"
+
+
+
+# ----- long-term memory API -----
+
+def test_memory_api_roundtrip_search_and_forget(client: TestClient) -> None:
+    created = client.post(
+        "/api/memory",
+        json={"text": "Пользователь предпочитает тёмную тему"},
+    )
+
+    assert created.status_code == 201
+    memory_id = created.json()["id"]
+    assert memory_id.startswith("mem-")
+    assert client.get("/api/memory").json()["memories"][0]["id"] == memory_id
+
+    found = client.get("/api/memory/search", params={"q": "какую тему предпочитает"}).json()
+    assert [item["id"] for item in found["memories"]] == [memory_id]
+
+    removed = client.delete(f"/api/memory/{memory_id}")
+    assert removed.status_code == 200
+    assert client.get("/api/memory").json()["memories"] == []
+    assert client.delete(f"/api/memory/{memory_id}").status_code == 404
+
+
+def test_memory_api_rejects_secrets_and_foreign_origin(client: TestClient) -> None:
+    rejected = client.post(
+        "/api/memory",
+        json={"text": "Мой пароль: hunter2"},
+    )
+    blocked = client.post(
+        "/api/memory",
+        json={"text": "Запомни безопасную настройку"},
+        headers={"Origin": "http://evil.example"},
+    )
+
+    assert rejected.status_code == 422
+    assert blocked.status_code == 403
+    assert client.get("/api/memory").json()["memories"] == []

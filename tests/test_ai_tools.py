@@ -12,7 +12,7 @@ class StubTools:
     def might_need_tools(self, message: str) -> bool:
         return "путев" in message.lower()
 
-    def definitions(self) -> list[dict[str, object]]:
+    def definitions(self, message: str = "") -> list[dict[str, object]]:
         return [
             {
                 "type": "function",
@@ -24,9 +24,15 @@ class StubTools:
             }
         ]
 
-    def execute(self, name: str, arguments: dict[str, object]) -> str:
+    def execute(
+        self,
+        name: str,
+        arguments: dict[str, object],
+        user_message: str = "",
+    ) -> str:
         assert name == "primavtodor_list_records"
         assert arguments == {"kind": "waybills"}
+        assert "путев" in user_message.lower()
         return '{"kind":"waybills","records":[{"id":"wb-1"}]}'
 
 

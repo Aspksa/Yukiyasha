@@ -17,6 +17,7 @@ from yukiyasha.modules.ai.errors import (
 from yukiyasha.modules.ai.persona_pack import (
     LEGACY_PROGRAM_RULES,
     RECENT_WINDOW,
+    V04_PROGRAM_RULES,
     format_examples,
     persona_text,
     pick_examples,
@@ -51,6 +52,9 @@ AI_MANIFEST = ModuleManifest(
         "disk.delete",
         "ai.provider",
         "primavtodor.read",
+        "memory.read",
+        "memory.write",
+        "memory.delete",
     ),
 )
 
@@ -149,7 +153,11 @@ class AiModule:
                 self.settings.assistant_name,
                 program_rules=LEGACY_PROGRAM_RULES,
             )
-            if current in {old_plain, old_character}:
+            v04_character = persona_text(
+                self.settings.assistant_name,
+                program_rules=V04_PROGRAM_RULES,
+            )
+            if current in {old_plain, old_character, v04_character}:
                 self._disk.write_text(PERSONA_PATH, default, overwrite=True)
         self._last_error = None
         self._state = ModuleState.READY
@@ -183,7 +191,7 @@ class AiModule:
             "assistant_name": settings.assistant_name,
             "persona_path": PERSONA_PATH,
             "tools": list(self._tools.names) if self._tools else [],
-            "tool_access": "read-only" if self._tools else "none",
+            "tool_access": "guarded" if self._tools else "none",
             "limits": {
                 "max_message_chars": MAX_MESSAGE_CHARS,
                 "max_tokens": settings.max_tokens,
@@ -296,7 +304,7 @@ class AiModule:
         planner = getattr(provider, "plan_tools", None)
         if not callable(planner):
             return context
-        plan = planner(context, self._tools.definitions())
+        plan = planner(context, self._tools.definitions(user_text))
         if plan is None:
             return context
         enriched = [*context, plan.message]
@@ -306,7 +314,11 @@ class AiModule:
                     "role": "tool",
                     "tool_call_id": call.id,
                     "name": call.name,
-                    "content": self._tools.execute(call.name, call.arguments),
+                    "content": self._tools.execute(
+                        call.name,
+                        call.arguments,
+                        user_text,
+                    ),
                 }
             )
         return enriched

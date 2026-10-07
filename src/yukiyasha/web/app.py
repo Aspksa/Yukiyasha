@@ -36,6 +36,12 @@ from yukiyasha.modules.disk import (
     DiskSecurityError,
     DiskTooLargeError,
 )
+from yukiyasha.modules.memory import (
+    MemoryError,
+    MemoryLimitError,
+    MemoryNotFoundError,
+    MemoryValidationError,
+)
 from yukiyasha.modules.primavtodor import (
     PrimavtodorError,
     RecordInUseError,
@@ -63,6 +69,10 @@ class ChatRequest(BaseModel):
 
 
 class PersonaRequest(BaseModel):
+    text: str
+
+
+class MemoryWriteRequest(BaseModel):
     text: str
 
 
@@ -118,6 +128,19 @@ def primavtodor_http_error(exc: PrimavtodorError | DiskError) -> HTTPException:
         return HTTPException(status_code=404, detail="Unknown record kind")
     if isinstance(exc, DiskError):
         return disk_http_error(exc)
+    return HTTPException(status_code=400, detail=str(exc))
+
+
+def memory_http_error(exc: MemoryError | DiskError) -> HTTPException:
+    """Map memory-domain failures to stable HTTP statuses."""
+    if isinstance(exc, DiskError):
+        return disk_http_error(exc)
+    if isinstance(exc, MemoryNotFoundError):
+        return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, MemoryValidationError):
+        return HTTPException(status_code=422, detail=str(exc))
+    if isinstance(exc, MemoryLimitError):
+        return HTTPException(status_code=409, detail=str(exc))
     return HTTPException(status_code=400, detail=str(exc))
 
 
@@ -241,6 +264,14 @@ def create_app(
         except (PrimavtodorError, DiskError) as exc:
             raise primavtodor_http_error(exc) from exc
 
+    def memory_call(action: Callable[[], T]) -> T:
+        if runtime.memory.state is not ModuleState.READY:
+            raise HTTPException(status_code=503, detail="Memory module is not ready")
+        try:
+            return action()
+        except (MemoryError, DiskError) as exc:
+            raise memory_http_error(exc) from exc
+
     def ai_call(action: Callable[[], T]) -> T:
         if runtime.ai.state is not ModuleState.READY:
             raise HTTPException(status_code=503, detail={"message": "Помощник не запущен"})
@@ -248,6 +279,25 @@ def create_app(
             return action()
         except (AiError, DiskError) as exc:
             raise ai_http_error(exc) from exc
+
+    @application.get("/api/memory")
+    def memory_list() -> dict[str, object]:
+        return {"memories": memory_call(runtime.memory.list_items)}
+
+    @application.get("/api/memory/search")
+    def memory_search(q: str, limit: int = Query(default=5, ge=1, le=10)) -> dict[str, object]:
+        return {
+            "memories": memory_call(lambda: runtime.memory.search(q, limit=limit))
+        }
+
+    @application.post("/api/memory", status_code=201)
+    def memory_remember(request: MemoryWriteRequest) -> dict[str, object]:
+        return memory_call(lambda: runtime.memory.remember(request.text))
+
+    @application.delete("/api/memory/{memory_id}")
+    def memory_forget(memory_id: str) -> dict[str, str]:
+        memory_call(lambda: runtime.memory.forget(memory_id))
+        return {"status": "forgotten", "id": memory_id}
 
     @application.get("/api/ai/status")
     def ai_status() -> dict[str, object]:

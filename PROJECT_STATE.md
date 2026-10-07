@@ -2,10 +2,10 @@
 
 ## Current release
 
-- Version: **0.4.0**
-- Stage: **Permissions / audited read-only AI tools**
+- Version: **0.5.0**
+- Stage: **Permissioned assistant memory**
 - Status: **released** (see `CHANGELOG.md`)
-- Modules: **Диск Yukiyasha**, **Примавтодор**, **Помощник**
+- Modules: **Диск Yukiyasha**, **Память**, **Примавтодор**, **Помощник**
 
 ## Implemented
 
@@ -14,54 +14,58 @@
 - Runtime degraded mode when module startup fails.
 - Runtime-owned **PermissionBroker** with default-deny checks.
 - Path-scoped **DiskAccess** capabilities:
+  - Память can access only `memory/**`;
   - Примавтодор can access only `projects/work/Примавтодор/**`;
   - AI can access only `ai/**`.
-- Explicit `primavtodor.read` capability for assistant tools.
+- Explicit assistant capabilities for `primavtodor.read` and `memory.read/write/delete`.
 - Persistent audit events under `system/audit/YYYY-MM-DD/*.json`.
-- AI tool masking before provider disclosure: phone, personnel number and fuel-card values are masked.
-- AI read-only tools:
-  - list/get Примавтодор records;
-  - read timesheet;
-  - read current settings/season.
+- AI tool masking before Примавтодор disclosure.
+- Read-only AI tools for Примавтодор records, timesheet and settings.
+- Long-term Memory module:
+  - one JSON file per memory under `memory/items/**`;
+  - local token-overlap search;
+  - deduplication, item/size limits and lifecycle health;
+  - explicit remember/forget gating for AI;
+  - credential-like material rejected before persistence;
+  - audit metadata excludes memory text and search query.
+- Direct memory API for listing, searching, adding and removing entries.
 - Standard OpenAI-compatible tool planning with ordinary-chat fallback when provider tools are unsupported.
 - No AI create/update/delete tools for Примавтодор.
-- Atomic disk writes, exact UTF-8/newline preservation and sandbox path validation.
-- 1 MiB text limit and 2 MiB HTTP request-body limit.
+- Atomic disk writes, sandbox validation and request limits.
 - Stable default disk root under `~/.yukiyasha/disk`.
-- Host, same-origin and browser security-header protections.
+- Host, same-origin and browser security protections.
 - Примавтодор linked records, seasonal fuel norms, timesheet, REST API and UI.
-- Browser workspace with file manager/editor, Примавтодор pages and assistant.
-- Windows launcher checks and two-tier GitHub Actions CI.
+- Browser workspace and Windows launcher with two-tier GitHub Actions CI.
 
 ## CI strategy
 
 - Pull requests: Ruff + Python tests + JS helper tests + wheel packaging + Windows launcher + PR Gate.
 - Main/nightly: Ubuntu + Windows × Python 3.11-3.13.
-- CI must be green before merge.
+- CI must be green before merging feature work.
 
 ## Security invariants
 
 - Module-to-module capability access is default-deny.
 - Module disk access is both permission-checked and path-scoped.
-- AI receives only read-only Примавтодор capabilities.
-- Sensitive tool fields are masked before provider transmission.
-- A tool result is disclosed only after its audit event has been written successfully.
-- Audit records contain action metadata, not the returned business payload.
+- AI business access remains read-only.
+- AI memory mutations require explicit remember/forget wording from the current user message.
+- Memory and business tool actions are audited without copying disclosed content into audit records.
+- Credential-like material is not accepted into long-term memory.
 - Core/modules do not depend on the web layer.
 - Disk paths cannot escape the configured sandbox root.
 
 ## Known limitations
 
-- No authentication; Yukiyasha is still a loopback-only local application.
-- `ai.provider` is declared but provider-network access is not yet wrapped as its own capability.
-- Audit retention/rotation and an audit viewer UI are not implemented yet.
-- The assistant has no separate long-term Memory module.
-- The assistant can read only structured Примавтодор records/settings/timesheet, not document folders.
-- Tool support depends on the provider implementing the standard OpenAI-compatible `tools` format.
-- No write proposals/approval workflow yet.
+- No authentication; Yukiyasha remains a loopback-only local application.
+- `ai.provider` is declared but provider-network access is not wrapped as its own capability.
+- Audit retention/rotation and an audit viewer UI are not implemented.
+- Memory retrieval is lexical, not semantic/vector-based.
+- Memory has no dedicated browser management page yet; management is through API or explicit chat commands.
+- Tool support depends on the provider implementing standard OpenAI-compatible `tools`.
+- No write proposal/approval workflow for Примавтодор yet.
 - No deployment configuration yet.
 
 ## Exact next_action
 
-Add a **Memory module** behind the same permission/audit boundary, then add **write proposals**
-that never mutate Примавтодор until a person explicitly approves the proposed change.
+Implement a **write proposal / human approval boundary** for Примавтодор: the assistant may draft a
+mutation, but it must not execute until the user explicitly approves that concrete proposal.

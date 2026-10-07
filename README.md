@@ -4,14 +4,14 @@ Yukiyasha is a modular AI-oriented platform foundation with a local web interfac
 
 ## Current version
 
-**v0.4.0 — Permissions and read-only AI tools**
+**v0.5.0 — Long-term assistant memory**
 
 The current release provides:
 - modular Python core and module registry with explicit lifecycle and health;
 - sandboxed local **Диск Yukiyasha** and a browser workspace (file manager, editor, system page);
 - the **Примавтодор** module: waybills, fuel (ГСМ), employees with fuel cards and vehicles, garage,
   timesheet, seasonal fuel norms with one summer/winter switch, document folders;
-- an **AI assistant** you connect with your own API key, with audited read-only tools over Примавтодор;
+- an **AI assistant** with audited read-only Примавтодор tools and explicit long-term memory;
 - FastAPI web/API layer, automated tests and two-tier CI.
 
 ## Requirements
@@ -112,9 +112,16 @@ as ordinary environment variables (they win over the file). `http://` is accepte
   added to the prompt, so the request is a little longer. Replace the persona any time.
 - The persona (`ai/persona.md`) and the conversations (`ai/chats/chat-*.json`) are plain files on
   the disk; edit the persona on the page ("Личность") at any time.
-- Tool access is read-only: the assistant has no create/update/delete tool for Примавтодор.
-  Every tool disclosure is written to `system/audit/YYYY-MM-DD/*.json` without the disclosed
-  business data itself.
+- Примавтодор access stays read-only: the assistant has no create/update/delete tool for business
+  data. Every tool disclosure is written to `system/audit/YYYY-MM-DD/*.json` without the
+  disclosed business data itself.
+- **Long-term memory** is separate from chat history and stored as JSON under
+  `memory/items/*.json`. The assistant can add or remove a memory only after an explicit
+  remember/forget request. Sensitive credential material is rejected. Memory actions are audited
+  without copying memory text or search queries into the audit event.
+- Memory can also be inspected through `GET /api/memory`, searched with
+  `GET /api/memory/search?q=...`, added with `POST /api/memory`, and removed with
+  `DELETE /api/memory/{id}`.
 - Cost control: answers are limited by `MAX_TOKENS`, a conversation sends only the most recent
   history that fits the context budget, and at most two answers are produced at a time.
 
@@ -133,7 +140,8 @@ src/yukiyasha/
   core/        application runtime
   modules/     module runtime, permissions and modules
     disk/      Диск Yukiyasha + scoped module access
-    ai/        assistant + read-only tool registry
+    ai/        assistant + guarded tool registry
+    memory/    explicit long-term memory
   web/         FastAPI application, middleware and browser UI
 tests/         isolated automated tests
 ```

@@ -3,8 +3,10 @@ from pathlib import Path
 
 import pytest
 
+from yukiyasha.modules.ai.tools import AiToolRegistry
 from yukiyasha.modules.audit import AuditLog
 from yukiyasha.modules.disk import DiskModule
+from yukiyasha.modules.manifest import ModuleManifest
 from yukiyasha.modules.permissions import PermissionBroker, PermissionDeniedError
 from yukiyasha.modules.primavtodor import PrimavtodorModule
 from yukiyasha.modules.primavtodor.access import PrimavtodorWriteAccess
@@ -150,3 +152,64 @@ def test_proposal_audit_omits_payload(tmp_path: Path) -> None:
     assert str(proposal["id"]) in text
     assert '"proposal.create"' in text
     assert '"proposal.apply"' in text
+
+
+
+class StubPrimavtodorRead:
+    def list_records(self, kind: str) -> dict[str, object]:
+        return {"kind": kind, "records": [], "problems": []}
+
+    def get_record(self, kind: str, record_id: str) -> dict[str, object]:
+        return {"kind": kind, "id": record_id}
+
+    def timesheet(self, month: str) -> dict[str, object]:
+        return {"month": month, "rows": []}
+
+    def settings(self) -> dict[str, object]:
+        return {"season": "summer"}
+
+
+def test_ai_registry_can_only_create_proposals(tmp_path: Path) -> None:
+    disk, _, proposals, _ = started(tmp_path)
+    broker = PermissionBroker()
+    broker.register(
+        ModuleManifest(
+            module_id="ai",
+            name="ai",
+            version="test",
+            description="test",
+            permissions=("proposal.create",),
+        )
+    )
+    access = ProposalCreateAccess(proposals, broker, "ai")
+    tools = AiToolRegistry(
+        StubPrimavtodorRead(),  # type: ignore[arg-type]
+        AuditLog(disk),
+        proposals=access,
+    )
+
+    assert "primavtodor_propose_change" in tools.names
+    assert not any("apply" in name or "approve" in name or "reject" in name for name in tools.names)
+    assert not any(
+        item["function"]["name"] == "primavtodor_propose_change"
+        for item in tools.definitions("Покажи машины Примавтодора")
+    )
+    assert any(
+        item["function"]["name"] == "primavtodor_propose_change"
+        for item in tools.definitions("Добавь машину в Примавтодор")
+    )
+
+    result = json.loads(
+        tools.execute(
+            "primavtodor_propose_change",
+            {
+                "operation": "create",
+                "kind": "vehicles",
+                "payload": vehicle_payload(),
+                "reason": "По просьбе пользователя",
+            },
+            "Добавь машину в Примавтодор",
+        )
+    )
+    assert result["status"] == "pending"
+    assert proposals.get(result["id"])["status"] == "pending"

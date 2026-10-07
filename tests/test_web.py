@@ -234,3 +234,21 @@ def test_web_root(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "Yukiyasha" in response.text
+
+
+@pytest.mark.parametrize(
+    ("method", "url", "kwargs"),
+    [
+        ("get", "/api/disk", {"params": {"path": "a\x00b"}}),
+        ("get", "/api/disk/file", {"params": {"path": "a\x00b"}}),
+        ("put", "/api/disk/file", {"json": {"path": "a\x00b", "content": "x"}}),
+        ("delete", "/api/disk/file", {"params": {"path": "a\x00b"}}),
+    ],
+)
+def test_disk_api_nul_path_is_400(
+    client: TestClient, method: str, url: str, kwargs: dict[str, object]
+) -> None:
+    response = getattr(client, method)(url, **kwargs)
+
+    assert response.status_code == 400
+    assert "NUL" in response.json()["detail"]

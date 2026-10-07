@@ -19,8 +19,16 @@
 - Responsive browser dashboard.
 - Unit/API tests.
 - Ruff quality gate.
-- GitHub Actions CI on Ubuntu and Windows for Python 3.11-3.13.
+- Two-tier GitHub Actions CI: fast PR checks plus full compatibility matrix.
 - Architecture and changelog documentation.
+
+## CI strategy
+
+- Pull requests: Ubuntu/Python 3.12 + separate Windows launcher check.
+- Main/nightly: full Ubuntu + Windows matrix for Python 3.11-3.13.
+- Stale runs are cancelled with concurrency groups.
+- Documentation-only changes skip Python CI.
+- Feature-branch push checks are intentionally removed to avoid duplicate PR runs.
 
 ## Verification
 

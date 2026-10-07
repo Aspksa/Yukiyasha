@@ -473,6 +473,7 @@ h1 { margin: 0; font-size: clamp(24px, 3vw, 30px); letter-spacing: -.02em; line-
 
 /* Section colours: one hue per Примавтодор section, shared by the tile, hover and folder icons. */
 [data-sec] { --sec-color: oklch(var(--sec-l) var(--sec-c) var(--h, 270)); }
+[data-sec="waybills"] { --h: 120; }
 [data-sec="timesheet"] { --h: 255; }
 [data-sec="employees"] { --h: 305; }
 [data-sec="garage"] { --h: 55; }

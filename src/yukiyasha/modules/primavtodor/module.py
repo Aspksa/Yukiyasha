@@ -7,6 +7,11 @@ module, never on the web layer, and talks to the disk exclusively through its pu
 
 from yukiyasha.modules.disk import DiskModule
 from yukiyasha.modules.manifest import ModuleManifest
+from yukiyasha.modules.primavtodor.errors import (
+    InvalidDocumentNameError,
+    UnknownSectionError,
+)
+from yukiyasha.modules.primavtodor.records import Records
 from yukiyasha.modules.primavtodor.sections import (
     GROUP_TITLES,
     PRIMAVTODOR_DIR,
@@ -14,6 +19,7 @@ from yukiyasha.modules.primavtodor.sections import (
     SECTIONS_BY_ID,
     Section,
 )
+from yukiyasha.modules.primavtodor.timesheet import Timesheet
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.version import get_version
 
@@ -22,23 +28,12 @@ PRIMAVTODOR_MANIFEST = ModuleManifest(
     name="Примавтодор",
     version=get_version(),
     description=(
-        "Рабочий проект «Примавтодор»: табель, сотрудники, гараж, ГСМ, договора, "
-        "счета-оферты, служебные записки, приказы и распоряжения на Диске Yukiyasha."
+        "Рабочий проект «Примавтодор»: путевые листы, ГСМ, сотрудники с топливными картами и "
+        "машинами, гараж, табель, договора, счета-оферты, служебные записки, приказы и "
+        "распоряжения на Диске Yukiyasha."
     ),
     permissions=("disk.read", "disk.write", "disk.delete"),
 )
-
-
-class PrimavtodorError(Exception):
-    """Base class for expected module-level errors."""
-
-
-class UnknownSectionError(PrimavtodorError):
-    """Raised when a section id does not exist."""
-
-
-class InvalidDocumentNameError(PrimavtodorError):
-    """Raised when a document name is not a single, plain file name."""
 
 
 class PrimavtodorModule:
@@ -46,6 +41,8 @@ class PrimavtodorModule:
 
     def __init__(self, disk: DiskModule) -> None:
         self._disk = disk
+        self.data = Records(disk)  # employees, vehicles, waybills, fuel
+        self.timesheet = Timesheet(disk, self.data)
         self._state = ModuleState.REGISTERED
         self._last_error: str | None = None
 

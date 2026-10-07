@@ -390,10 +390,11 @@ def test_primavtodor_sections_endpoint_counts_documents_on_the_disk(client: Test
     assert response.status_code == 200
     sections = response.json()
     assert [item["title"] for item in sections] == [
-        "Табель",
+        "Путевые листы",
+        "Горюче-смазочные материалы",
         "Сотрудники",
         "Гараж",
-        "Горюче-смазочные материалы",
+        "Табель",
         "Договора",
         "Счёт-оферта",
         "Служебные записки",
@@ -436,3 +437,131 @@ def test_every_primavtodor_section_has_an_icon_and_a_colour(client: TestClient) 
         hues.append(int(css.split(rule)[1].split(";")[0]))
 
     assert len(set(hues)) == len(hues), "section hues must be distinct"
+
+
+# ----- Примавтодор records API -----
+
+BASE = "/api/primavtodor"
+
+
+def _post(client: TestClient, kind: str, payload: dict[str, object]):
+    return client.post(f"{BASE}/records/{kind}", json=payload)
+
+
+def _chain(client: TestClient) -> dict[str, str]:
+    """vehicle -> driver (card + car) -> waybill; returns the ids."""
+    vehicle = _post(client, "vehicles", {"plate": "А123ВБ125", "model": "КАМАЗ",
+                                         "norm_per_100km": 30}).json()
+    driver = _post(client, "employees", {"full_name": "Иванов И.И.", "is_driver": True,
+                                         "fuel_card_number": "7001", "vehicle_id": vehicle["id"],
+                                         "personnel_number": "1"}).json()
+    waybill = _post(client, "waybills", {"number": "1", "date": "2026-10-05",
+                                         "driver_id": driver["id"], "vehicle_id": vehicle["id"],
+                                         "odometer_out": 1000}).json()
+    return {"vehicle": vehicle["id"], "driver": driver["id"], "waybill": waybill["id"]}
+
+
+def test_primavtodor_schema_describes_every_kind(client: TestClient) -> None:
+    payload = client.get(f"{BASE}/schema").json()
+
+    kinds = {entity["kind"]: entity for entity in payload["entities"]}
+    assert set(kinds) == {"employees", "vehicles", "waybills", "fuel"}
+    assert kinds["waybills"]["section_id"] == "waybills"
+    fields = {f["name"]: f for f in kinds["employees"]["fields"]}
+    assert fields["fuel_card_number"]["label"] == "Номер топливной карты"
+    assert fields["vehicle_id"]["ref"] == "vehicles"
+    assert [c["code"] for c in payload["timesheet_codes"]][:2] == ["Я", "В"]
+
+
+def test_primavtodor_full_chain_over_http(client: TestClient) -> None:
+    ids = _chain(client)
+
+    fuel = _post(client, "fuel", {"waybill_id": ids["waybill"], "date": "2026-10-05",
+                                  "liters": 40, "price_per_liter": 60})
+    assert fuel.status_code == 201
+    assert fuel.json()["values"]["card_number"] == "7001"
+    assert fuel.json()["computed"]["amount"] == 2400
+
+    waybill = client.get(f"{BASE}/records/waybills/{ids['waybill']}").json()
+    assert waybill["computed"]["fuel_issued"] == 40
+    assert waybill["labels"]["driver_id"] == "Иванов И.И."
+
+    listing = client.get(f"{BASE}/records/waybills").json()
+    assert [r["id"] for r in listing["records"]] == [ids["waybill"]]
+
+    # The records are real files in the section folders, visible through the disk API too.
+    files = client.get("/api/disk", params={"path": "projects/work/Примавтодор/Путевые листы"})
+    assert [e["name"] for e in files.json()["entries"]] == [f"{ids['waybill']}.json"]
+
+
+def test_primavtodor_validation_is_422_with_field_messages(client: TestClient) -> None:
+    response = _post(client, "vehicles", {"plate": "", "model": "x", "norm_per_100km": "abc"})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["message"]
+    assert set(detail["fields"]) == {"plate", "norm_per_100km"}
+
+
+def test_primavtodor_conflict_not_found_and_unknown_kind(client: TestClient) -> None:
+    ids = _chain(client)
+
+    in_use = client.delete(f"{BASE}/records/vehicles/{ids['vehicle']}")
+    assert in_use.status_code == 409
+    assert in_use.json()["detail"]["references"]
+
+    assert client.get(f"{BASE}/records/vehicles/veh-00000000").status_code == 404
+    assert client.get(f"{BASE}/records/nothing").status_code == 404
+    assert client.get(f"{BASE}/records/vehicles/..%2F..%2Fx").status_code == 404
+    assert client.delete(f"{BASE}/records/waybills/{ids['waybill']}").status_code == 200
+    assert client.get(f"{BASE}/records/waybills/{ids['waybill']}").status_code == 404
+
+
+def test_primavtodor_update_over_http(client: TestClient) -> None:
+    ids = _chain(client)
+    current = client.get(f"{BASE}/records/vehicles/{ids['vehicle']}").json()["values"]
+
+    response = client.put(
+        f"{BASE}/records/vehicles/{ids['vehicle']}", json={**current, "model": "МАЗ"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["values"]["model"] == "МАЗ"
+
+
+def test_primavtodor_timesheet_over_http(client: TestClient) -> None:
+    ids = _chain(client)
+
+    sheet = client.get(f"{BASE}/timesheet", params={"month": "2026-10"}).json()
+    cells = {c["date"]: c for c in sheet["rows"][0]["cells"]}
+    assert cells["2026-10-05"]["code"] == "Я"
+
+    marked = client.put(f"{BASE}/timesheet/mark", json={
+        "month": "2026-10", "employee_id": ids["driver"], "date": "2026-10-06", "code": "ОТ"})
+    assert marked.status_code == 200
+    sheet = client.get(f"{BASE}/timesheet", params={"month": "2026-10"}).json()
+    assert {c["date"]: c["code"] for c in sheet["rows"][0]["cells"]}["2026-10-06"] == "ОТ"
+
+    assert client.get(f"{BASE}/timesheet", params={"month": "2026-99"}).status_code == 422
+    assert client.get(f"{BASE}/timesheet").status_code == 200  # defaults to the current month
+
+
+def test_primavtodor_changes_reject_foreign_origins(client: TestClient) -> None:
+    evil = {"Origin": "http://evil.example"}
+
+    created = client.post(f"{BASE}/records/vehicles", json={"plate": "A1", "model": "x"},
+                          headers=evil)
+    marked = client.put(f"{BASE}/timesheet/mark", json={
+        "month": "2026-10", "employee_id": "emp-00000000", "date": "2026-10-01"}, headers=evil)
+
+    assert created.status_code == 403 and marked.status_code == 403
+    assert client.get(f"{BASE}/records/vehicles").json()["records"] == []
+    # reading with a foreign Origin header stays possible (the response is unreadable anyway)
+    assert client.get(f"{BASE}/records/vehicles", headers=evil).status_code == 200
+
+
+def test_primavtodor_records_are_503_when_the_module_is_not_ready(client: TestClient) -> None:
+    client.app.state.runtime.primavtodor.stop()
+
+    assert client.get(f"{BASE}/records/vehicles").status_code == 503
+    assert client.post(f"{BASE}/records/vehicles", json={}).status_code == 503

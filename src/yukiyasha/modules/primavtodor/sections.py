@@ -27,16 +27,26 @@ class Section:
 
 
 SECTIONS: tuple[Section, ...] = (
-    Section("timesheet", "Табель", "Табель", GROUP_ACCOUNTING, "Учёт рабочего времени"),
-    Section("employees", "Сотрудники", "Сотрудники", GROUP_ACCOUNTING, "Данные сотрудников"),
-    Section("garage", "Гараж", "Гараж", GROUP_ACCOUNTING, "Транспорт и техника"),
+    # Учёт — in the order the data flows: waybill -> fuel -> employee (card, car) -> timesheet.
+    Section(
+        "waybills",
+        "Путевые листы",
+        "Путевые листы",
+        GROUP_ACCOUNTING,
+        "Выезды водителей, пробег и расход",
+    ),
     Section(
         "fuel",
         "Горюче-смазочные материалы",
         "Горюче-смазочные материалы",
         GROUP_ACCOUNTING,
-        "Учёт ГСМ",
+        "Заправки по топливным картам",
     ),
+    Section(
+        "employees", "Сотрудники", "Сотрудники", GROUP_ACCOUNTING, "Водители, карты и машины"
+    ),
+    Section("garage", "Гараж", "Гараж", GROUP_ACCOUNTING, "Машины и нормы расхода"),
+    Section("timesheet", "Табель", "Табель", GROUP_ACCOUNTING, "Учёт рабочего времени"),
     Section("contracts", "Договора", "Договора", GROUP_DOCUMENTS, "Договоры и приложения"),
     Section(
         "invoice_offer", "Счёт-оферта", "Счёт-оферта", GROUP_DOCUMENTS, "Счета-оферты"

@@ -1,12 +1,15 @@
 """Примавтодор module."""
 
-from yukiyasha.modules.primavtodor.module import (
-    PRIMAVTODOR_MANIFEST,
+from yukiyasha.modules.primavtodor.errors import (
     InvalidDocumentNameError,
     PrimavtodorError,
-    PrimavtodorModule,
+    RecordInUseError,
+    RecordNotFoundError,
+    RecordValidationError,
+    UnknownEntityError,
     UnknownSectionError,
 )
+from yukiyasha.modules.primavtodor.module import PRIMAVTODOR_MANIFEST, PrimavtodorModule
 from yukiyasha.modules.primavtodor.sections import (
     PRIMAVTODOR_DIR,
     SECTIONS,
@@ -22,6 +25,10 @@ __all__ = [
     "InvalidDocumentNameError",
     "PrimavtodorError",
     "PrimavtodorModule",
+    "RecordInUseError",
+    "RecordNotFoundError",
+    "RecordValidationError",
     "Section",
+    "UnknownEntityError",
     "UnknownSectionError",
 ]

@@ -155,6 +155,18 @@ class MemoryModule:
         self._load(memory_id)
         self._disk.delete(self._path(memory_id))
 
+    def forget_matching(self, query: str) -> str:
+        matches = self.search(query, limit=2)
+        if not matches:
+            raise MemoryNotFoundError("Подходящая запись памяти не найдена")
+        if len(matches) > 1:
+            raise MemoryValidationError(
+                "Нашлось несколько подходящих записей памяти; уточните, что именно забыть"
+            )
+        memory_id = str(matches[0]["id"])
+        self.forget(memory_id)
+        return memory_id
+
     def search(self, query: str, *, limit: int = 5) -> list[dict[str, object]]:
         wanted = _tokens(query)
         if not wanted:

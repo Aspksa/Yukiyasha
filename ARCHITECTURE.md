@@ -1,50 +1,75 @@
 # Yukiyasha Architecture
 
-## v0.1.0 foundation
+## v0.2.0 module foundation
 
-Yukiyasha starts as a modular monolith. This keeps the first release simple while
-preserving clear boundaries for future modules.
+Yukiyasha remains a modular monolith, but modules now have an explicit runtime boundary.
 
 ### Layers
 
 1. **Core**
    - process/runtime lifecycle;
-   - domain state;
+   - owns the module registry;
    - no dependency on FastAPI or browser code.
 
 2. **Application configuration**
-   - environment-driven immutable settings;
-   - one place for service identity and version.
+   - immutable environment-driven settings;
+   - service identity, version and module paths.
 
-3. **Web/API**
-   - FastAPI transport;
-   - REST endpoints expose core state;
-   - browser UI consumes the same API;
-   - web code must not own core business state.
+3. **Modules**
+   - explicit manifest;
+   - registration and lifecycle;
+   - health snapshots;
+   - permissions declared by each module;
+   - modules do not import the web layer.
 
-4. **Future modules**
-   - memory;
-   - agent runtime;
-   - providers;
-   - tools and permissions;
-   - automation;
-   - observability.
+4. **Web/API**
+   - transport only;
+   - exposes core/module state and module operations.
 
 ### Dependency rule
 
 ```text
-Browser -> Web/API -> Core
+Browser -> Web/API -> Core -> Module Registry -> Modules
                     -> Configuration
 ```
 
-Core never imports from Web/API.
+Core and modules never import from Web/API.
 
-### Initial API
+## First module: Диск Yukiyasha
 
-- `GET /` — browser application;
-- `GET /api/health` — health probe;
-- `GET /api/runtime` — runtime snapshot;
-- `GET /docs` — generated OpenAPI UI.
+The Disk module is local sandboxed storage.
+
+Default root:
+
+```text
+data/disk
+```
+
+Override with:
+
+```text
+YUKIYASHA_DISK_DIR
+```
+
+Security invariants:
+- absolute paths are rejected;
+- `..` traversal outside the disk root is rejected;
+- symlink entries are not exposed by directory listings;
+- text API reads/writes are capped at 1 MiB;
+- deleting the disk root is forbidden.
+
+Declared permissions:
+- `disk.read`
+- `disk.write`
+- `disk.delete`
+
+### API
+
+- `GET /api/modules` — module manifests, lifecycle state and health;
+- `GET /api/disk?path=` — list a directory;
+- `GET /api/disk/file?path=` — read UTF-8 text;
+- `PUT /api/disk/file` — write UTF-8 text;
+- `DELETE /api/disk/file?path=` — delete a file or empty directory.
 
 ### Engineering rules
 

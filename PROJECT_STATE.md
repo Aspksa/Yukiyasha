@@ -2,59 +2,53 @@
 
 ## Current release
 
-- Version: **0.1.0**
-- Stage: **Foundation / Core + Web**
-- Status: **merged to main**
-- Release baseline commit: `ef68af0`
+- Version: **0.2.0**
+- Stage: **Module Runtime / First Module**
+- Status: **release candidate**
+- First module: **Диск Yukiyasha**
 
 ## Implemented
 
-- Python package foundation.
-- Immutable environment configuration.
-- Runtime lifecycle: starting -> ready -> stopped.
-- Runtime snapshot DTO.
-- FastAPI application.
-- Health endpoint.
-- Runtime telemetry endpoint.
-- Responsive browser dashboard.
+- Python application runtime.
+- Module manifest model.
+- Module registry with duplicate protection.
+- Module lifecycle: registered -> ready -> stopped.
+- Module health snapshots.
+- First module: sandboxed local Yukiyasha Disk.
+- Disk read/write/list/delete operations.
+- Path traversal and absolute-path protection.
+- 1 MiB text file safety limit.
+- FastAPI module and disk endpoints.
+- Configurable disk root through `YUKIYASHA_DISK_DIR`.
 - Unit/API tests.
-- Ruff quality gate.
-- Two-tier GitHub Actions CI: fast PR checks plus full compatibility matrix.
-- Architecture and changelog documentation.
+- Two-tier GitHub Actions CI with stable `PR Gate`.
 
 ## CI strategy
 
-- Pull requests: Ubuntu/Python 3.12 + separate Windows launcher check.
+- Pull requests: Fast quality + Windows launcher + PR Gate.
 - Main/nightly: full Ubuntu + Windows matrix for Python 3.11-3.13.
 - Stale runs are cancelled with concurrency groups.
-- Documentation-only changes skip Python CI.
 - Feature-branch push checks are intentionally removed to avoid duplicate PR runs.
-
-## Verification
-
-- v0.1.0 feature branch CI: **green**.
-- Ruff: **passed**.
-- Pytest: **passed**.
-- Platforms: **Ubuntu + Windows**.
-- Python: **3.11, 3.12, 3.13**.
 
 ## Invariants
 
 - Core does not depend on the web layer.
-- Browser state is derived from API state.
-- The version for this release is 0.1.0.
+- Modules do not depend on the web layer.
+- Disk paths cannot escape the configured sandbox root.
+- Browser/API state is derived from runtime/module state.
+- The canonical release version is 0.2.0.
 - CI must be green before merging feature work to main.
 
 ## Known limitations
 
-- No persistence.
+- Permission declarations exist, but central runtime authorization is not implemented yet.
+- Disk API currently supports UTF-8 text files only.
 - No authentication.
 - No LLM/provider integration.
-- No memory or module runtime.
+- No memory module.
 - No deployment configuration yet.
 
 ## Exact next_action
 
-Build **v0.2.0 Module Runtime Foundation**:
-module manifest -> discovery -> validation -> registry -> lifecycle -> health ->
-permissions boundary, while keeping modules isolated from the web transport.
+Build the **permissions boundary** around module operations, then add a browser UI for
+Диск Yukiyasha and use the disk as the persistence base for the future Memory module.

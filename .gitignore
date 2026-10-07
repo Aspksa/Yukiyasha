@@ -10,6 +10,7 @@ venv/
 !.env.example
 dist/
 build/
+data/
 .coverage
 htmlcov/
 .idea/

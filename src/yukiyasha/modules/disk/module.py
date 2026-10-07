@@ -96,10 +96,15 @@ class DiskModule:
 
     def list_entries(self, relative_path: str = "") -> list[dict[str, object]]:
         directory = self._resolve(relative_path)
-        if not directory.exists():
-            raise FileNotFoundError(relative_path)
-        if not directory.is_dir():
-            raise NotADirectoryError(relative_path)
+        try:
+            if not directory.exists():
+                raise FileNotFoundError(relative_path)
+            if not directory.is_dir():
+                raise NotADirectoryError(relative_path)
+        except (FileNotFoundError, NotADirectoryError):
+            raise
+        except OSError as exc:
+            raise self._translate_os_error(exc) from exc
 
         try:
             visible = [item for item in directory.iterdir() if not item.is_symlink()]
@@ -122,10 +127,15 @@ class DiskModule:
 
     def read_text(self, relative_path: str) -> str:
         path = self._resolve(relative_path)
-        if not path.exists():
-            raise FileNotFoundError(relative_path)
-        if not path.is_file():
-            raise IsADirectoryError(relative_path)
+        try:
+            if not path.exists():
+                raise FileNotFoundError(relative_path)
+            if not path.is_file():
+                raise IsADirectoryError(relative_path)
+        except (FileNotFoundError, IsADirectoryError):
+            raise
+        except OSError as exc:
+            raise self._translate_os_error(exc) from exc
 
         try:
             with path.open("rb") as handle:
@@ -159,10 +169,15 @@ class DiskModule:
         except OSError as exc:
             raise self._translate_os_error(exc) from exc
 
-        if path.exists() and path.is_dir():
-            raise DiskConflictError("Target path is a directory")
-        if path.is_symlink():
-            raise DiskSecurityError("Writing through symlinks is not allowed")
+        try:
+            if path.exists() and path.is_dir():
+                raise DiskConflictError("Target path is a directory")
+            if path.is_symlink():
+                raise DiskSecurityError("Writing through symlinks is not allowed")
+        except DiskError:
+            raise
+        except OSError as exc:
+            raise self._translate_os_error(exc) from exc
 
         temp_path: Path | None = None
         try:
@@ -197,10 +212,15 @@ class DiskModule:
         path = self._resolve(relative_path)
         if path == self.root.resolve():
             raise DiskSecurityError("The disk root cannot be deleted")
-        if not path.exists():
-            raise FileNotFoundError(relative_path)
-        if path.is_symlink():
-            raise DiskSecurityError("Deleting symlinks is not allowed")
+        try:
+            if not path.exists():
+                raise FileNotFoundError(relative_path)
+            if path.is_symlink():
+                raise DiskSecurityError("Deleting symlinks is not allowed")
+        except (FileNotFoundError, DiskSecurityError):
+            raise
+        except OSError as exc:
+            raise self._translate_os_error(exc) from exc
 
         try:
             if path.is_dir():

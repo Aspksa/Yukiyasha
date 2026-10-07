@@ -42,18 +42,18 @@ from yukiyasha.modules.memory import (
     MemoryNotFoundError,
     MemoryValidationError,
 )
-from yukiyasha.modules.proposals import (
-    ProposalError,
-    ProposalNotFoundError,
-    ProposalStateError,
-    ProposalValidationError,
-)
 from yukiyasha.modules.primavtodor import (
     PrimavtodorError,
     RecordInUseError,
     RecordNotFoundError,
     RecordValidationError,
     UnknownEntityError,
+)
+from yukiyasha.modules.proposals import (
+    ProposalError,
+    ProposalNotFoundError,
+    ProposalStateError,
+    ProposalValidationError,
 )
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.web.middleware import RequestBodyLimitMiddleware, SecurityHeadersMiddleware

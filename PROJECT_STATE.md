@@ -2,58 +2,66 @@
 
 ## Current release
 
-- Version: **0.3.0**
-- Stage: **Workspace / Примавтодор / AI assistant (first version)**
+- Version: **0.4.0**
+- Stage: **Permissions / audited read-only AI tools**
 - Status: **released** (see `CHANGELOG.md`)
 - Modules: **Диск Yukiyasha**, **Примавтодор**, **Помощник**
 
 ## Implemented
 
-- Module manifest and registry.
-- Lifecycle states including FAILED.
+- Module manifest and registry with lifecycle states including FAILED.
 - Startup rollback and best-effort shutdown of all modules.
 - Runtime degraded mode when module startup fails.
-- Runtime start timestamp set on every actual start.
-- Atomic disk writes and atomic no-overwrite publication.
-- Exact UTF-8/newline preservation.
-- Consistent disk API error mapping: 400/403/404/409/413/500.
-- 1 MiB text limit and 2 MiB HTTP body limit.
+- Runtime-owned **PermissionBroker** with default-deny checks.
+- Path-scoped **DiskAccess** capabilities:
+  - Примавтодор can access only `projects/work/Примавтодор/**`;
+  - AI can access only `ai/**`.
+- Explicit `primavtodor.read` capability for assistant tools.
+- Persistent audit events under `system/audit/YYYY-MM-DD/*.json`.
+- AI tool masking before provider disclosure: phone, personnel number and fuel-card values are masked.
+- AI read-only tools:
+  - list/get Примавтодор records;
+  - read timesheet;
+  - read current settings/season.
+- Standard OpenAI-compatible tool planning with ordinary-chat fallback when provider tools are unsupported.
+- No AI create/update/delete tools for Примавтодор.
+- Atomic disk writes, exact UTF-8/newline preservation and sandbox path validation.
+- 1 MiB text limit and 2 MiB HTTP request-body limit.
 - Stable default disk root under `~/.yukiyasha/disk`.
-- Host and browser Origin validation for the local API.
-- Module Примавтодор: ten sections on the disk; linked records (employees with fuel card + car, vehicles, waybills, fuel) validated against a schema, seasonal (summer/winter) fuel norms with one switch, a timesheet built from waybills, REST API and UI pages. No document templates (orders, memos, offers) yet.
-- AI assistant: streamed chat with any OpenAI-compatible API by the user's own key; persona and conversations on the disk; sees no business data yet.
-- Browser workspace: file browser, text editor, create/delete and system page backed by Yukiyasha Disk.
-- Isolated API tests using temporary disk roots.
-- Windows launcher dependency fingerprinting and safer port fallback.
-- Two-tier GitHub Actions CI with stable `PR Gate`.
+- Host, same-origin and browser security-header protections.
+- Примавтодор linked records, seasonal fuel norms, timesheet, REST API and UI.
+- Browser workspace with file manager/editor, Примавтодор pages and assistant.
+- Windows launcher checks and two-tier GitHub Actions CI.
 
 ## CI strategy
 
-- Pull requests: Fast quality + Windows launcher + PR Gate.
-- Main/nightly: full Ubuntu + Windows matrix for Python 3.11-3.13.
-- Stale runs are cancelled with concurrency groups.
-- Windows launcher diagnostics install runtime dependencies only once.
+- Pull requests: Ruff + Python tests + JS helper tests + wheel packaging + Windows launcher + PR Gate.
+- Main/nightly: Ubuntu + Windows × Python 3.11-3.13.
+- CI must be green before merge.
 
-## Invariants
+## Security invariants
 
-- Core does not depend on the web layer.
-- Modules do not depend on the web layer.
+- Module-to-module capability access is default-deny.
+- Module disk access is both permission-checked and path-scoped.
+- AI receives only read-only Примавтодор capabilities.
+- Sensitive tool fields are masked before provider transmission.
+- A tool result is disclosed only after its audit event has been written successfully.
+- Audit records contain action metadata, not the returned business payload.
+- Core/modules do not depend on the web layer.
 - Disk paths cannot escape the configured sandbox root.
-- Disk writes do not expose partially written replacement files.
-- Tests must not write to the user's real disk root.
-- The package version is sourced from installed package metadata.
-- CI must be green before merging feature work to main.
 
 ## Known limitations
 
-- Permission declarations are metadata only; central authorization is not implemented yet.
-- Disk API currently supports UTF-8 text files only.
-- No authentication.
-- Local security assumes binding to loopback; remote serving is not supported yet.
-- The AI assistant has no memory, tools or data access and is verified against a test server only.
+- No authentication; Yukiyasha is still a loopback-only local application.
+- `ai.provider` is declared but provider-network access is not yet wrapped as its own capability.
+- Audit retention/rotation and an audit viewer UI are not implemented yet.
+- The assistant has no separate long-term Memory module.
+- The assistant can read only structured Примавтодор records/settings/timesheet, not document folders.
+- Tool support depends on the provider implementing the standard OpenAI-compatible `tools` format.
+- No write proposals/approval workflow yet.
 - No deployment configuration yet.
 
 ## Exact next_action
 
-Implement the **permissions boundary**, **data masking** and an **audit log**; then give the assistant
-read-only tools over the Примавтодор data. The assistant proposes, a person decides.
+Add a **Memory module** behind the same permission/audit boundary, then add **write proposals**
+that never mutate Примавтодор until a person explicitly approves the proposed change.

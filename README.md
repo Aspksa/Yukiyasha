@@ -4,14 +4,14 @@ Yukiyasha is a modular AI-oriented platform foundation with a local web interfac
 
 ## Current version
 
-**v0.3.0 — Workspace, Примавтодор and AI assistant**
+**v0.4.0 — Permissions and read-only AI tools**
 
 The current release provides:
 - modular Python core and module registry with explicit lifecycle and health;
 - sandboxed local **Диск Yukiyasha** and a browser workspace (file manager, editor, system page);
 - the **Примавтодор** module: waybills, fuel (ГСМ), employees with fuel cards and vehicles, garage,
   timesheet, seasonal fuel norms with one summer/winter switch, document folders;
-- an **AI assistant** you connect with your own API key (see below);
+- an **AI assistant** you connect with your own API key, with audited read-only tools over Примавтодор;
 - FastAPI web/API layer, automated tests and two-tier CI.
 
 ## Requirements
@@ -103,12 +103,18 @@ as ordinary environment variables (they win over the file). `http://` is accepte
 - The key lives only in that file or the environment: it is never stored on the disk module,
   written to a log, returned by the API or shown in the UI, and it is scrubbed from error texts.
 - **Every message is sent to the provider** together with the persona and the earlier messages of
-  the conversation. The assistant currently sees none of the Yukiyasha data (waybills, employees,
-  documents). Do not paste personal data you would not send to that provider.
+  the conversation. For questions about Примавтодор, a compatible provider can request read-only
+  local tools for waybills, fuel, employees, vehicles, timesheets and settings. Tool results are
+  also sent to the provider. Phone numbers, personnel numbers and fuel-card numbers are masked
+  before they leave Yukiyasha. Providers that do not support standard OpenAI tools fall back to
+  ordinary chat.
 - By default the assistant speaks as Юкияша (a bundled character pack); examples of her tone are
   added to the prompt, so the request is a little longer. Replace the persona any time.
 - The persona (`ai/persona.md`) and the conversations (`ai/chats/chat-*.json`) are plain files on
   the disk; edit the persona on the page ("Личность") at any time.
+- Tool access is read-only: the assistant has no create/update/delete tool for Примавтодор.
+  Every tool disclosure is written to `system/audit/YYYY-MM-DD/*.json` without the disclosed
+  business data itself.
 - Cost control: answers are limited by `MAX_TOKENS`, a conversation sends only the most recent
   history that fits the context budget, and at most two answers are produced at a time.
 
@@ -125,8 +131,9 @@ node --test tests/js/util.test.js   # UI helpers, needs Node 20+
 ```text
 src/yukiyasha/
   core/        application runtime
-  modules/     module runtime and modules
-    disk/      Диск Yukiyasha
+  modules/     module runtime, permissions and modules
+    disk/      Диск Yukiyasha + scoped module access
+    ai/        assistant + read-only tool registry
   web/         FastAPI application, middleware and browser UI
 tests/         isolated automated tests
 ```

@@ -1086,3 +1086,19 @@ dialog input[type="text"] {
 .cal-legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 14px 0 4px; font-size: 13px; color: var(--muted); }
 .cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .cal-legend .cal-day { width: 18px; min-height: 18px; }
+
+/* closing the month */
+.month-steps, .month-findings { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.month-sub { margin: 18px 0 8px; font-size: 14px; }
+.month-step, .month-finding { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; }
+.month-step { grid-template-columns: auto 1fr; align-items: center; gap: 12px; }
+.month-step small, .month-finding small { color: var(--muted); display: block; }
+.month-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-right: 8px; background: color-mix(in srgb, var(--muted) 18%, transparent); }
+.month-step.ok .month-badge { background: color-mix(in srgb, #1f9d55 22%, transparent); }
+.month-step.warn .month-badge, .month-finding.warn .month-badge { background: color-mix(in srgb, #d9a400 28%, transparent); }
+.month-step.error .month-badge, .month-finding.error .month-badge { background: color-mix(in srgb, var(--danger) 26%, transparent); }
+.month-finding.error { border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.month-finding.dismissed { opacity: .6; }
+.month-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.btn-small { padding: 4px 10px; font-size: 13px; }
+.month-hidden { margin-left: auto; font-size: 13px; }

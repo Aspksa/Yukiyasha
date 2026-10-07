@@ -84,6 +84,7 @@ class AiToolRegistry:
             "primavtodor_get_record": self._get_record,
             "primavtodor_timesheet": self._timesheet,
             "primavtodor_settings": self._settings,
+            "primavtodor_month_review": self._month_review,
             "primavtodor_list_documents": self._list_documents,
         }
         if proposals is not None:
@@ -235,6 +236,25 @@ class AiToolRegistry:
                         "properties": {
                             "month": {"type": "string", "pattern": "^\\d{4}-\\d{2}$"},
                             "employee_id": {"type": "string"},
+                        },
+                        "required": ["month"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "primavtodor_month_review",
+                    "description": (
+                        "Контроль месяца ГГГГ-ММ: готовность шагов (путевые листы, заправки, "
+                        "табель) и замечания по расходу топлива: перерасход, разрывы пробега, "
+                        "не то топливо, незакрытые листы. Только чтение."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "month": {"type": "string", "pattern": "^\\d{4}-\\d{2}$"},
                         },
                         "required": ["month"],
                         "additionalProperties": False,
@@ -419,6 +439,23 @@ class AiToolRegistry:
                 for row in source
                 if isinstance(row, dict)
             ],
+        }
+
+    def _month_review(self, arguments: dict[str, object]) -> dict[str, object]:
+        review = self._primavtodor.month_review(str(arguments.get("month", "")))
+        findings = review.get("findings")
+        shown = findings if isinstance(findings, list) else []
+        return {
+            "month": review.get("month"),
+            "ready": review.get("ready"),
+            "steps": review.get("steps"),
+            "counts": review.get("counts"),
+            "findings": [
+                {key: item.get(key) for key in ("severity", "title", "detail", "date", "subject")}
+                for item in shown[:MAX_LIST_ITEMS]
+                if isinstance(item, dict)
+            ],
+            "more": max(0, len(shown) - MAX_LIST_ITEMS),
         }
 
     def _settings(self, arguments: dict[str, object]) -> dict[str, object]:

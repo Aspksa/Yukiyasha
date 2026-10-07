@@ -5,6 +5,18 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- **Closing of the month** (*Закрытие месяца* on the Примавтодор page): one screen with the steps
+  (waybills closed, fill-ups loaded, control, timesheet norm), the findings and a single
+  *Скачать всё за месяц (.zip)* with the Т-12 timesheet, the fuel analysis, a fuel card per
+  vehicle and the findings as a spreadsheet-friendly CSV.
+- **Control of fuel use** (rules, no guessing): overrun above 10% (error above 25%), suspiciously
+  low or zero consumption, odometer going back or an unrecorded gap between waybills, fuel
+  remainder not matching the previous waybill, wrong fuel type, a fill-up larger than the tank
+  (new vehicle field *Объём бака*), fill-up date different from the waybill, probable duplicate
+  fill-ups, unusual prices, a driver on two cars on one day, old unclosed waybills, work on a
+  day off. A finding you have looked at can be *accepted* (and restored); accepted ones stop
+  counting.
+- The assistant can read the month's review (`primavtodor_month_review`, read only, audited).
 - **Printable waybill** (form № 3, light vehicle): a *Печать* button in the waybill form
   downloads the organisation's own blank, filled (both the waybill and its copy). New fields:
   driver's licence number and class, vehicle garage number and waybill form kind, departure and

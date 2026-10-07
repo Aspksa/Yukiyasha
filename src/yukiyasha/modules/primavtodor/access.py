@@ -34,6 +34,10 @@ class PrimavtodorReadAccess(_PrimavtodorAccess):
         self._check("primavtodor.read")
         return self._module.timesheet.month_view(month)
 
+    def month_review(self, month: str) -> dict[str, object]:
+        self._check("primavtodor.read")
+        return self._module.month_review(month)
+
     def settings(self) -> dict[str, object]:
         self._check("primavtodor.read")
         return self._module.settings.load()

@@ -19,6 +19,7 @@ from yukiyasha.modules.primavtodor.errors import (
 from yukiyasha.modules.primavtodor.fuel_import import import_statement
 from yukiyasha.modules.primavtodor.fuelcard import FuelCard, fill_fuel_cards
 from yukiyasha.modules.primavtodor.fuelreport import ReportSigners, VehicleRow, fill_fuel_report
+from yukiyasha.modules.primavtodor.month_review import build_review
 from yukiyasha.modules.primavtodor.printing import WaybillForm3, fill_form3, short_name
 from yukiyasha.modules.primavtodor.records import Records, norm_rate
 from yukiyasha.modules.primavtodor.schema import (
@@ -474,3 +475,67 @@ class PrimavtodorModule:
             compiled=date.today(),
         )
         return fill_timesheet(form), f"Табель {month}.xlsx"
+
+    # ----- closing the month -----
+
+    def month_review(self, month: str, *, show_dismissed: bool = False) -> dict[str, object]:
+        """What is done and what does not add up for a month (``ГГГГ-ММ``)."""
+        self.timesheet._parse_month(month)  # one place that validates the month format
+        return build_review(
+            self.data, self.settings, self.timesheet, month, date.today(),
+            show_dismissed=show_dismissed,
+        )  # fmt: skip
+
+    def dismiss_finding(self, finding_id: str, note: str = "") -> dict[str, object]:
+        return {"dismissed": self.settings.dismiss(finding_id, note)}
+
+    def restore_finding(self, finding_id: str) -> dict[str, object]:
+        return {"dismissed": self.settings.restore(finding_id)}
+
+    def month_package(self, month: str) -> tuple[bytes, str]:
+        """A zip with everything for the month: timesheet, analysis, fuel cards, findings."""
+        import csv
+        import io
+        import zipfile
+
+        review = self.month_review(month, show_dismissed=True)
+        buffer = io.BytesIO()
+        skipped: list[str] = []
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for builder, label in (
+                (lambda: self.timesheet_form(month), "табель"),
+                (lambda: self.fuel_report(month), "анализ расхода ГСМ"),
+            ):
+                try:
+                    content, name = builder()
+                    archive.writestr(name, content)
+                except PrintNotAvailableError as exc:
+                    skipped.append(f"{label}: {exc.message}")
+            plates = {
+                str(w.get("vehicle_id"))
+                for w in self.data.snapshot(KIND_WAYBILLS)
+                if str(w.get("date", "")).startswith(month)
+            }
+            for vehicle_id in sorted(plates):
+                try:
+                    content, name = self.fuel_cards(vehicle_id, month)
+                    archive.writestr(f"Карточки ГСМ/{name}", content)
+                except (PrintNotAvailableError, KeyError) as exc:
+                    skipped.append(f"карточка: {exc}")
+            rows = io.StringIO()
+            writer = csv.writer(rows, delimiter=";")
+            writer.writerow(
+                ["Серьёзность", "Дата", "Объект", "Замечание", "Подробности", "Принято"]
+            )
+            for item in review["findings"]:
+                writer.writerow([
+                    {"error": "ошибка", "warn": "проверить", "info": "к сведению"}[
+                        str(item["severity"])
+                    ],
+                    item["date"], item["subject"], item["title"], item["detail"],
+                    "да" if item.get("dismissed") else "",
+                ])  # fmt: skip
+            archive.writestr(f"Замечания {month}.csv", "\ufeff" + rows.getvalue())
+            if skipped:
+                archive.writestr("Что не вошло.txt", "\n".join(skipped) + "\n")
+        return buffer.getvalue(), f"Закрытие месяца {month}.zip"

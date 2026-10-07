@@ -156,6 +156,12 @@ function pvWire() {
   pvById("entity-new").addEventListener("click", () => void pvOpenForm(null));
   pvById("entity-filter").addEventListener("input", pvRenderEntity);
 
+  pvById("btn-month").addEventListener("click", () => void pvOpenMonth());
+  pvById("month-input").addEventListener("change", () => void pvLoadMonth());
+  pvById("month-show-dismissed").addEventListener("change", () => void pvLoadMonth());
+  pvById("month-prev").addEventListener("click", () => pvShiftReview(-1));
+  pvById("month-next").addEventListener("click", () => pvShiftReview(1));
+  pvById("month-package").addEventListener("click", () => void pvDownloadPackage());
   pvById("ts-calendar").addEventListener("click", () => void pvOpenCalendar());
   pvById("cal-year").addEventListener("change", () => void pvShowCalendarYear());
   pvById("ts-export").addEventListener("click", () => void pvExportTimesheet());
@@ -763,6 +769,125 @@ async function pvApplyImport(event) {
     slot.textContent = describeError(error);
     slot.hidden = false;
     button.disabled = false; // some fill-ups may already be loaded; a retry only adds the rest
+  }
+}
+
+/* ---------- closing the month ---------- */
+
+const PV_STATUS_LABELS = { ok: "готово", warn: "проверить", error: "ошибка", info: "нет данных" };
+const PV_SEVERITY_LABELS = { error: "Ошибка", warn: "Проверить", info: "К сведению" };
+
+function pvOpenMonth() {
+  const input = pvById("month-input");
+  if (!input.value) input.value = pv.month ?? PV_UTIL.currentMonth();
+  pvById("month-error").hidden = true;
+  pvById("dlg-month").showModal();
+  void pvLoadMonth();
+}
+
+function pvShiftReview(delta) {
+  const input = pvById("month-input");
+  input.value = PV_UTIL.shiftMonth(input.value || PV_UTIL.currentMonth(), delta);
+  void pvLoadMonth();
+}
+
+async function pvLoadMonth() {
+  const month = pvById("month-input").value;
+  const error = pvById("month-error");
+  error.hidden = true;
+  if (!/^\d{4}-\d{2}$/.test(month)) return;
+  try {
+    const query = new URLSearchParams({ show_dismissed: String(pvById("month-show-dismissed").checked) });
+    pvRenderMonth(await api("GET", `/api/primavtodor/month/${month}/review?${query}`));
+  } catch (failure) {
+    error.textContent = describeError(failure);
+    error.hidden = false;
+  }
+}
+
+function pvRenderMonth(review) {
+  pvById("month-steps").replaceChildren(
+    ...review.steps.map((step) => {
+      const item = document.createElement("li");
+      item.className = `month-step ${step.status}`;
+      const badge = document.createElement("span");
+      badge.className = "month-badge";
+      badge.textContent = PV_STATUS_LABELS[step.status] ?? step.status;
+      const text = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = step.title;
+      const detail = document.createElement("small");
+      detail.textContent = step.detail;
+      text.append(title, detail);
+      item.append(badge, text);
+      return item;
+    }),
+  );
+
+  const list = pvById("month-findings");
+  list.replaceChildren(
+    ...review.findings.map((finding) => {
+      const item = document.createElement("li");
+      item.className = `month-finding ${finding.severity}${finding.dismissed ? " dismissed" : ""}`;
+      const head = document.createElement("div");
+      const badge = document.createElement("span");
+      badge.className = "month-badge";
+      badge.textContent = PV_SEVERITY_LABELS[finding.severity] ?? finding.severity;
+      const title = document.createElement("strong");
+      title.textContent = finding.title;
+      head.append(badge, title);
+      const detail = document.createElement("small");
+      detail.textContent = `${PV_UTIL.formatDate(finding.date)} · ${finding.subject} — ${finding.detail}`;
+      const actions = document.createElement("div");
+      actions.className = "month-actions";
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "btn btn-small";
+      open.textContent = finding.kind === "fuel" ? "К заправкам" : "К путевым листам";
+      open.addEventListener("click", () => {
+        pvById("dlg-month").close();
+        navigate({ module: PV_MODULE, section: finding.kind === "fuel" ? "fuel" : "waybills" });
+      });
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "btn btn-small";
+      toggle.textContent = finding.dismissed ? "Вернуть" : "Принять";
+      toggle.title = finding.dismissed ? "Снова считать замечанием" : "Я посмотрел, так и должно быть";
+      toggle.addEventListener("click", () => void pvToggleFinding(finding, toggle));
+      actions.append(open, toggle);
+      item.append(head, detail, actions);
+      return item;
+    }),
+  );
+  pvById("month-findings-title").hidden = review.findings.length === 0;
+}
+
+async function pvToggleFinding(finding, button) {
+  button.disabled = true;
+  try {
+    const action = finding.dismissed ? "restore" : "dismiss";
+    await api("POST", `/api/primavtodor/findings/${action}`, { body: { id: finding.id } });
+    await pvLoadMonth();
+  } catch (error) {
+    const slot = pvById("month-error");
+    slot.textContent = describeError(error);
+    slot.hidden = false;
+    button.disabled = false;
+  }
+}
+
+async function pvDownloadPackage() {
+  const button = pvById("month-package");
+  button.disabled = true;
+  try {
+    const name = await pvDownload(`/api/primavtodor/month/${pvById("month-input").value}/package`);
+    toast(`Пакет сохранён: ${name}`);
+  } catch (error) {
+    const slot = pvById("month-error");
+    slot.textContent = describeError(error);
+    slot.hidden = false;
+  } finally {
+    button.disabled = false;
   }
 }
 

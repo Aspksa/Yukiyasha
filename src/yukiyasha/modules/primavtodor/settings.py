@@ -119,3 +119,36 @@ class ModuleSettings:
         stored["print"] = {**values, "control": str(control)}
         self._write(stored, "print_updated_at")
         return self.print_settings()
+
+    # ----- findings the user has looked at and accepted -----
+
+    def dismissed(self) -> dict[str, dict[str, str]]:
+        raw = self._stored().get("dismissed")
+        if not isinstance(raw, dict):
+            return {}
+        return {
+            str(key): {"at": str(value.get("at", "")), "note": str(value.get("note", ""))}
+            for key, value in raw.items()
+            if isinstance(value, dict)
+        }
+
+    def dismiss(self, finding_id: str, note: str = "") -> dict[str, dict[str, str]]:
+        if not finding_id or len(finding_id) > 80:
+            raise RecordValidationError({"id": "Не удалось определить замечание"})
+        stored = self._stored()
+        current = self.dismissed()
+        current[finding_id] = {
+            "at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "note": " ".join(note.split())[:300],
+        }
+        stored["dismissed"] = current
+        self._write(stored, "dismissed_updated_at")
+        return current
+
+    def restore(self, finding_id: str) -> dict[str, dict[str, str]]:
+        stored = self._stored()
+        current = self.dismissed()
+        current.pop(finding_id, None)
+        stored["dismissed"] = current
+        self._write(stored, "dismissed_updated_at")
+        return current

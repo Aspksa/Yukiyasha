@@ -405,6 +405,43 @@ def create_app(
         """One switch for every fuel norm: summer or winter."""
         return primavtodor_call(lambda: runtime.primavtodor.data.apply_season(request.season))
 
+    @application.get("/api/primavtodor/month/{month}/review")
+    def primavtodor_month_review(
+        month: str, show_dismissed: bool = Query(default=False)
+    ) -> dict[str, object]:
+        """Steps, findings and readiness of a month (``ГГГГ-ММ``)."""
+        return primavtodor_call(
+            lambda: runtime.primavtodor.month_review(month, show_dismissed=show_dismissed)
+        )
+
+    @application.get("/api/primavtodor/month/{month}/package")
+    def primavtodor_month_package(month: str) -> Response:
+        """A zip with the timesheet, the analysis, the fuel cards and the findings."""
+        content, name = primavtodor_call(lambda: runtime.primavtodor.month_package(month))
+        return Response(
+            content=content,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
+        )
+
+    @application.post("/api/primavtodor/findings/dismiss")
+    def primavtodor_dismiss_finding(
+        payload: Annotated[dict[str, Any], Body()],
+    ) -> dict[str, object]:
+        """Accept a finding: it stops counting until it is restored."""
+        return primavtodor_call(
+            lambda: runtime.primavtodor.dismiss_finding(
+                str(payload.get("id", "")), str(payload.get("note", ""))
+            )
+        )
+
+    @application.post("/api/primavtodor/findings/restore")
+    def primavtodor_restore_finding(
+        payload: Annotated[dict[str, Any], Body()],
+    ) -> dict[str, object]:
+        finding_id = str(payload.get("id", ""))
+        return primavtodor_call(lambda: runtime.primavtodor.restore_finding(finding_id))
+
     @application.get("/api/primavtodor/calendar")
     def primavtodor_calendar_years() -> dict[str, object]:
         """Years of the production calendar that can be chosen."""

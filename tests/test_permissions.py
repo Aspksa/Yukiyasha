@@ -99,6 +99,12 @@ class StubPrimavtodor:
     def timesheet(self, month: str) -> dict[str, object]:
         return {"month": month, "rows": []}
 
+    def month_review(self, month: str) -> dict[str, object]:
+        finding = {"severity": "warn", "title": "Перерасход топлива", "detail": "+15%",
+                   "date": "2026-10-05", "subject": "А1 · Иван Иванов", "id": "OVERRUN:wb-1"}
+        return {"month": month, "ready": False, "steps": [], "counts": {"warn": 1},
+                "findings": [finding] * 25}  # fmt: skip
+
     def settings(self) -> dict[str, object]:
         return {"season": "summer"}
 
@@ -162,3 +168,21 @@ def test_ai_document_tool_exposes_metadata_only(tmp_path: Path) -> None:
     assert payload["documents"][0]["name"] == "записка-12.md"
     assert "preview" not in payload["documents"][0]
     assert "content" not in payload["documents"][0]
+
+
+def test_ai_month_review_tool_is_read_only_trimmed_and_audited(tmp_path: Path) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+    tools = AiToolRegistry(StubPrimavtodor(), AuditLog(disk))  # type: ignore[arg-type]
+
+    payload = json.loads(tools.execute("primavtodor_month_review", {"month": "2026-10"}))
+
+    assert payload["month"] == "2026-10" and payload["counts"] == {"warn": 1}
+    assert len(payload["findings"]) == 20 and payload["more"] == 5  # a short list for the model
+    assert "id" not in payload["findings"][0]  # only what the model needs
+    assert "primavtodor_month_review" in tools.names
+    assert any(
+        d["function"]["name"] == "primavtodor_month_review"
+        for d in tools.definitions("Что не сходится по расходу ГСМ за октябрь?")
+    )
+    assert list((tmp_path / "disk" / "system" / "audit").rglob("*.json"))

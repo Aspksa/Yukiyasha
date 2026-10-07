@@ -4,14 +4,14 @@ Yukiyasha is a modular AI-oriented platform foundation with a local web interfac
 
 ## Current version
 
-**v0.5.0 — Long-term assistant memory**
+**v0.6.0 — AI write proposals with human approval**
 
 The current release provides:
 - modular Python core and module registry with explicit lifecycle and health;
 - sandboxed local **Диск Yukiyasha** and a browser workspace (file manager, editor, system page);
 - the **Примавтодор** module: waybills, fuel (ГСМ), employees with fuel cards and vehicles, garage,
   timesheet, seasonal fuel norms with one summer/winter switch, document folders;
-- an **AI assistant** with audited read-only Примавтодор tools and explicit long-term memory;
+- an **AI assistant** with audited read access, long-term memory and human-approved write proposals;
 - FastAPI web/API layer, automated tests and two-tier CI.
 
 ## Requirements
@@ -112,9 +112,15 @@ as ordinary environment variables (they win over the file). `http://` is accepte
   added to the prompt, so the request is a little longer. Replace the persona any time.
 - The persona (`ai/persona.md`) and the conversations (`ai/chats/chat-*.json`) are plain files on
   the disk; edit the persona on the page ("Личность") at any time.
-- Примавтодор access stays read-only: the assistant has no create/update/delete tool for business
-  data. Every tool disclosure is written to `system/audit/YYYY-MM-DD/*.json` without the
-  disclosed business data itself.
+- Direct Примавтодор access stays read-only. For mutation requests the assistant can only create
+  a validated **proposal**. A proposal changes nothing until a person separately approves its id
+  through the local API. Update/delete proposals capture the source record fingerprint and become
+  `stale` instead of overwriting data that changed after the proposal was created.
+- Proposal lifecycle is transparent through `GET /api/proposals`,
+  `GET /api/proposals/{id}`, `POST /api/proposals/{id}/approve` and
+  `POST /api/proposals/{id}/reject`. Approval/rejection is protected by the same-origin boundary.
+- Tool disclosures and proposal lifecycle events are written to
+  `system/audit/YYYY-MM-DD/*.json` without copying the business payload itself.
 - **Long-term memory** is separate from chat history and stored as JSON under
   `memory/items/*.json`. The assistant can add or remove a memory only after an explicit
   remember/forget request. Sensitive credential material is rejected. Memory actions are audited
@@ -142,6 +148,7 @@ src/yukiyasha/
     disk/      Диск Yukiyasha + scoped module access
     ai/        assistant + guarded tool registry
     memory/    explicit long-term memory
+    proposals/ human-approved mutation proposals
   web/         FastAPI application, middleware and browser UI
 tests/         isolated automated tests
 ```

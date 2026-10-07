@@ -10,6 +10,7 @@ from yukiyasha.modules.memory import MemoryAccess, MemoryError
 from yukiyasha.modules.permissions import PermissionDeniedError
 from yukiyasha.modules.primavtodor.access import PrimavtodorReadAccess
 from yukiyasha.modules.primavtodor.errors import PrimavtodorError
+from yukiyasha.modules.proposals import ProposalCreateAccess, ProposalError
 
 SENSITIVE_KEYS = {
     "phone",
@@ -34,6 +35,11 @@ REMEMBER_TRIGGER = re.compile(
 )
 FORGET_TRIGGER = re.compile(
     r"\bзабудь\b|\bудали (?:это )?из памяти\b|\bне помни\b",
+    re.IGNORECASE,
+)
+MUTATION_TRIGGER = re.compile(
+    r"создай|добавь|измени|обнови|исправь|удали|оформи|закрой|назначь|"
+    r"предложи измен|подготовь измен",
     re.IGNORECASE,
 )
 KINDS = ("waybills", "fuel", "employees", "vehicles")
@@ -61,9 +67,11 @@ class AiToolRegistry:
         primavtodor: PrimavtodorReadAccess,
         audit: AuditLog,
         memory: MemoryAccess | None = None,
+        proposals: ProposalCreateAccess | None = None,
     ) -> None:
         self._primavtodor = primavtodor
         self._memory = memory
+        self._proposals = proposals
         self._audit = audit
         self._handlers: dict[str, Callable[[dict[str, object]], object]] = {
             "primavtodor_list_records": self._list_records,
@@ -71,6 +79,8 @@ class AiToolRegistry:
             "primavtodor_timesheet": self._timesheet,
             "primavtodor_settings": self._settings,
         }
+        if proposals is not None:
+            self._handlers["primavtodor_propose_change"] = self._propose_change
         if memory is not None:
             self._handlers.update(
                 {
@@ -91,6 +101,8 @@ class AiToolRegistry:
         definitions: list[dict[str, object]] = []
         if BUSINESS_TRIGGER.search(message):
             definitions.extend(self._business_definitions())
+            if self._proposals is not None and MUTATION_TRIGGER.search(message):
+                definitions.append(self._proposal_definition())
         if self._memory is not None and MEMORY_TRIGGER.search(message):
             definitions.append(self._memory_search_definition())
             if REMEMBER_TRIGGER.search(message):
@@ -113,6 +125,10 @@ class AiToolRegistry:
             return self._denied(name, {"reason": "no_explicit_remember"})
         if name == "memory_forget" and not FORGET_TRIGGER.search(user_message):
             return self._denied(name, {"reason": "no_explicit_forget"})
+        if name == "primavtodor_propose_change" and not (
+            BUSINESS_TRIGGER.search(user_message) and MUTATION_TRIGGER.search(user_message)
+        ):
+            return self._denied(name, {"reason": "no_mutation_intent"})
 
         metadata = self._audit_metadata(name, arguments)
         try:
@@ -125,7 +141,7 @@ class AiToolRegistry:
             )
         except PermissionDeniedError:
             return self._denied(name, metadata)
-        except (PrimavtodorError, MemoryError, RuntimeError, ValueError) as exc:
+        except (PrimavtodorError, MemoryError, ProposalError, RuntimeError, ValueError) as exc:
             self._audit.record(
                 subject="ai",
                 action=name,
@@ -231,6 +247,33 @@ class AiToolRegistry:
                 },
             },
         ]
+
+    def _proposal_definition(self) -> dict[str, object]:
+        return {
+            "type": "function",
+            "function": {
+                "name": "primavtodor_propose_change",
+                "description": (
+                    "Создать предложение изменения Примавтодора. Это НЕ применяет изменение. "
+                    "Пользователь должен отдельно подтвердить proposal по его id."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "operation": {
+                            "type": "string",
+                            "enum": ["create", "update", "delete"],
+                        },
+                        "kind": {"type": "string", "enum": list(KINDS)},
+                        "record_id": {"type": "string"},
+                        "payload": {"type": "object"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["operation", "kind"],
+                    "additionalProperties": False,
+                },
+            },
+        }
 
     def _memory_search_definition(self) -> dict[str, object]:
         return {
@@ -349,6 +392,22 @@ class AiToolRegistry:
     def _settings(self, arguments: dict[str, object]) -> dict[str, object]:
         del arguments
         return self._primavtodor.settings()
+
+    def _propose_change(self, arguments: dict[str, object]) -> dict[str, object]:
+        assert self._proposals is not None
+        raw_payload = arguments.get("payload")
+        payload = raw_payload if isinstance(raw_payload, dict) else None
+        return self._proposals.create(
+            operation=str(arguments.get("operation", "")),
+            kind=str(arguments.get("kind", "")),
+            record_id=(
+                str(arguments["record_id"])
+                if arguments.get("record_id") is not None
+                else None
+            ),
+            payload=payload,
+            reason=str(arguments.get("reason", "")),
+        )
 
     def _memory_search(self, arguments: dict[str, object]) -> dict[str, object]:
         assert self._memory is not None

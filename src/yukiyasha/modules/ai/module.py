@@ -18,6 +18,7 @@ from yukiyasha.modules.ai.persona_pack import (
     LEGACY_PROGRAM_RULES,
     RECENT_WINDOW,
     V04_PROGRAM_RULES,
+    V05_PROGRAM_RULES,
     format_examples,
     persona_text,
     pick_examples,
@@ -44,7 +45,8 @@ AI_MANIFEST = ModuleManifest(
     version=get_version(),
     description=(
         "Личный ИИ-помощник: личность и диалоги хранятся на Диске, ответы даёт выбранная "
-        "модель по вашему ключу; данные Примавтодора доступны только через read-only инструменты."
+        "модель по вашему ключу; данные Примавтодора доступны на чтение, а изменения — "
+        "только как предложения с отдельным подтверждением человеком."
     ),
     permissions=(
         "disk.read",
@@ -55,6 +57,7 @@ AI_MANIFEST = ModuleManifest(
         "memory.read",
         "memory.write",
         "memory.delete",
+        "proposal.create",
     ),
 )
 
@@ -157,7 +160,11 @@ class AiModule:
                 self.settings.assistant_name,
                 program_rules=V04_PROGRAM_RULES,
             )
-            if current in {old_plain, old_character, v04_character}:
+            v05_character = persona_text(
+                self.settings.assistant_name,
+                program_rules=V05_PROGRAM_RULES,
+            )
+            if current in {old_plain, old_character, v04_character, v05_character}:
                 self._disk.write_text(PERSONA_PATH, default, overwrite=True)
         self._last_error = None
         self._state = ModuleState.READY

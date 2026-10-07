@@ -31,3 +31,8 @@ class MemoryAccess:
         self._broker.require(self._subject, "memory.delete")
         self._ready()
         self._memory.forget(memory_id)
+
+    def forget_matching(self, query: str) -> str:
+        self._broker.require(self._subject, "memory.delete")
+        self._ready()
+        return self._memory.forget_matching(query)

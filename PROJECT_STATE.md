@@ -4,7 +4,7 @@
 
 - Version: **0.4.0**
 - Stage: **Permissions / audited read-only AI tools**
-- Status: **release candidate**
+- Status: **released** (see `CHANGELOG.md`)
 - Modules: **Диск Yukiyasha**, **Примавтодор**, **Помощник**
 
 ## Implemented

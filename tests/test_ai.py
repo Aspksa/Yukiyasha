@@ -298,7 +298,7 @@ def test_the_key_is_never_written_to_the_disk(tmp_path: Path) -> None:
 
 def test_default_persona_is_the_character_and_an_old_default_is_upgraded(tmp_path: Path) -> None:
     from yukiyasha.modules.ai.module import OLD_DEFAULT_PERSONA
-    from yukiyasha.modules.ai.persona_pack import V04_PROGRAM_RULES, persona_text
+    from yukiyasha.modules.ai.persona_pack import V04_PROGRAM_RULES, V05_PROGRAM_RULES, persona_text
 
     with FakeProvider(chunks=["ok"]) as provider:
         settings = settings_for(provider, assistant_name="Юкияша")
@@ -315,7 +315,14 @@ def test_default_persona_is_the_character_and_an_old_default_is_upgraded(tmp_pat
             persona_text("Юкияша", program_rules=V04_PROGRAM_RULES)
         )
         module.stop()
-        module.start()  # an untouched v0.4.0 persona gets the memory rules too
+        module.start()  # an untouched v0.4.0 persona gets the current rules too
+        assert module.persona() == persona
+
+        module.set_persona(
+            persona_text("Юкияша", program_rules=V05_PROGRAM_RULES)
+        )
+        module.stop()
+        module.start()  # an untouched v0.5.0 persona gets proposal rules too
         assert module.persona() == persona
 
 

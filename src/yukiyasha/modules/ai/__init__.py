@@ -15,7 +15,13 @@ from yukiyasha.modules.ai.module import (
     AiModule,
     ChatTurn,
 )
-from yukiyasha.modules.ai.provider import ChatProvider, OpenAICompatibleProvider
+from yukiyasha.modules.ai.provider import (
+    ChatProvider,
+    OpenAICompatibleProvider,
+    ToolCall,
+    ToolPlan,
+)
+from yukiyasha.modules.ai.tools import AiToolRegistry
 
 __all__ = [
     "AI_MANIFEST",
@@ -25,10 +31,13 @@ __all__ = [
     "AiError",
     "AiModule",
     "AiNotConfiguredError",
+    "AiToolRegistry",
     "ChatProvider",
     "ChatTurn",
     "ConversationNotFoundError",
     "MessageRejectedError",
     "OpenAICompatibleProvider",
     "ProviderError",
+    "ToolCall",
+    "ToolPlan",
 ]

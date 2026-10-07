@@ -37,3 +37,8 @@ jobs:
 
       - name: Tests
         run: python -m pytest -q
+
+      - name: Windows launcher diagnostics
+        if: runner.os == 'Windows' && matrix.python-version == '3.11'
+        shell: cmd
+        run: Yukiyasha.bat --check

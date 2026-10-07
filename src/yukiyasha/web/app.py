@@ -518,11 +518,12 @@ def create_app(
     def primavtodor_bookings(
         start: Annotated[date | None, Query()] = None,
         days: Annotated[int, Query(ge=1, le=62)] = 14,
+        day: Annotated[date | None, Query()] = None,
     ) -> dict[str, object]:
         """Grid cars × days of the vehicle schedule, who is away now and who leaves this week."""
         today = date.today()
         return primavtodor_call(
-            lambda: runtime.primavtodor.bookings.overview(start or today, days, today)
+            lambda: runtime.primavtodor.bookings.overview(start or today, days, today, day)
         )
 
     @application.get("/api/primavtodor/bookings/free")

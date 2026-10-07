@@ -186,8 +186,10 @@ class Bookings:
             "conflicts": self._conflicts(record, everything),
         }
 
-    def overview(self, start: date, days: int, today: date) -> dict[str, object]:
-        """The grid cars × days plus who is away now."""
+    def overview(
+        self, start: date, days: int, today: date, day: date | None = None
+    ) -> dict[str, object]:
+        """The grid cars × days, who is away now and who is free on ``day`` (default today)."""
         days = max(1, min(days, MAX_WINDOW_DAYS))
         last = start + timedelta(days=days - 1)
         everything = self._all()
@@ -217,6 +219,7 @@ class Bookings:
             if today < date.fromisoformat(str(r["date_from"])) <= today + timedelta(days=7)
         ]
         return {
+            "free": self._free_on(day or today, rows, cars, drivers),
             "start": start.isoformat(),
             "end": last.isoformat(),
             "today": today.isoformat(),
@@ -241,6 +244,58 @@ class Bookings:
             "now": away,
             "soon": soon,
             "kinds": [{"value": k, "label": label} for k, label in BOOKING_KINDS],
+        }
+
+    def _free_on(
+        self,
+        day: date,
+        rows: list[dict[str, object]],
+        cars: list[dict[str, object]],
+        drivers: dict[str, dict[str, object]],
+    ) -> dict[str, object]:
+        """Cars and drivers with nothing booked on ``day`` and the next day they are taken."""
+        iso = day.isoformat()
+
+        def verdict(key: str, ident: object) -> tuple[bool, str | None]:
+            mine = [r for r in rows if r.get(key) == ident]
+            if any(str(r["date_from"]) <= iso <= str(r["date_to"]) for r in mine):
+                return False, None
+            later = sorted(str(r["date_from"]) for r in mine if str(r["date_from"]) > iso)
+            return True, later[0] if later else None
+
+        free_cars, free_drivers = [], []
+        for car in cars:
+            ok, until = verdict("vehicle_id", car["id"])
+            if ok:
+                free_cars.append(
+                    {
+                        "id": car["id"],
+                        "plate": car.get("plate", ""),
+                        "model": car.get("model", ""),
+                        "next": until,
+                        "driver": self._regular_driver(car, drivers, day),
+                    }
+                )
+        people = sorted(drivers.values(), key=lambda p: str(p.get("full_name", "")).casefold())
+        for person in people:
+            if not person.get("is_driver") or not person.get("active", True):
+                continue
+            ok, until = verdict("driver_id", person["id"])
+            if ok:
+                current = vehicle_at(person, iso) or person.get("vehicle_id")
+                car = next((c for c in cars if c["id"] == current), None)
+                free_drivers.append(
+                    {"id": person["id"], "name": str(person["full_name"]), "next": until,
+                     "vehicle_id": current, "plate": car.get("plate", "") if car else ""}
+                )
+        return {
+            "day": iso,
+            "vehicles": free_cars,
+            "drivers": free_drivers,
+            "vehicles_total": len(cars),
+            "drivers_total": sum(
+                1 for p in drivers.values() if p.get("is_driver") and p.get("active", True)
+            ),
         }
 
     @staticmethod

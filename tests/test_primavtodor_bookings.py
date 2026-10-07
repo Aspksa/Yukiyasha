@@ -81,3 +81,23 @@ def test_free_cars_and_delete(module: PrimavtodorModule) -> None:
     assert len(module.bookings.free(date(2026, 10, 8), date(2026, 10, 8))) == 2
     module.bookings.delete(created["id"])
     assert module.bookings.overview(date(2026, 10, 1), 14, date(2026, 10, 8))["bookings"] == []
+
+
+def test_free_cars_and_drivers_on_a_day(module: PrimavtodorModule) -> None:
+    taken = make_vehicle(module, plate="Х1", model="Hino")
+    spare = make_vehicle(module, plate="Л1", model="Lexus")
+    away = make_driver(module, taken["id"])
+    book(module, taken, away, "2026-10-07", "2026-10-09")
+    book(module, taken, away, "2026-10-12", "2026-10-13")
+
+    free = module.bookings.overview(date(2026, 10, 5), 7, date(2026, 10, 8))["free"]
+    assert [v["plate"] for v in free["vehicles"]] == ["Л1"] and free["drivers"] == []
+    assert free["vehicles_total"] == 2 and free["drivers_total"] == 1
+
+    later = module.bookings.overview(date(2026, 10, 5), 7, date(2026, 10, 8), date(2026, 10, 10))
+    assert {v["plate"]: v["next"] for v in later["free"]["vehicles"]} == {
+        "Х1": "2026-10-12",
+        "Л1": None,
+    }
+    assert later["free"]["drivers"][0]["next"] == "2026-10-12"
+    assert spare["id"] in {v["id"] for v in later["free"]["vehicles"]}

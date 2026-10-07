@@ -25,21 +25,25 @@ def import_statement(
 ) -> dict[str, object]:
     operations, period = parse_statement(content, filename)
 
-    drivers = {
-        str(e.get("fuel_card_number")): e
-        for e in data.snapshot(KIND_EMPLOYEES)
-        if e.get("fuel_card_number")
-    }
+    employees = data.snapshot(KIND_EMPLOYEES)
+    drivers_by_id = {e["id"]: e for e in employees}
+    drivers = {str(e.get("fuel_card_number")): e for e in employees if e.get("fuel_card_number")}
     waybills_by_driver_day: dict[tuple[str, str], list[dict[str, object]]] = {}
     for waybill in data.snapshot(KIND_WAYBILLS):
         index = (str(waybill.get("driver_id")), str(waybill.get("date")))
         waybills_by_driver_day.setdefault(index, []).append(waybill)
 
+    # The card is the driver's current one (the card stored on an old fill-up may be outdated).
+    card_of_waybill = {
+        w["id"]: str(drivers_by_id.get(w.get("driver_id"), {}).get("fuel_card_number") or "")
+        for w in data.snapshot(KIND_WAYBILLS)
+    }
     # (card, date, litres) -> times already on file ("" for a record entered by hand)
-    known: dict[tuple[str, str, float], set[str]] = {}
+    known: dict[tuple[str, str, float], list[str]] = {}
     for fuel in data.snapshot(KIND_FUEL):
-        key = _key(fuel.get("card_number"), fuel.get("date"), fuel.get("liters"))
-        known.setdefault(key, set()).add(str(fuel.get("time") or ""))
+        card = card_of_waybill.get(fuel.get("waybill_id")) or fuel.get("card_number")
+        key = _key(card, fuel.get("date"), fuel.get("liters"))
+        known.setdefault(key, []).append(str(fuel.get("time") or ""))
 
     report: list[dict[str, object]] = []
     counts = {"new": 0, "duplicate": 0, "unmatched": 0, "failed": 0}
@@ -55,7 +59,7 @@ def import_statement(
                 entry["reason"] = "; ".join(exc.fields.values()) or exc.message
         if entry["status"] == "new":
             liters_new += op.liters
-            known.setdefault(_key(op.card, op.day.isoformat(), op.liters), set()).add(op.time)
+            known.setdefault(_key(op.card, op.day.isoformat(), op.liters), []).append(op.time)
         counts[str(entry["status"])] += 1
         report.append(entry)
 
@@ -73,7 +77,7 @@ def _classify(
     op: FuelOperation,
     drivers: dict[str, dict[str, object]],
     waybills: dict[tuple[str, str], list[dict[str, object]]],
-    known: dict[tuple[str, str, float], set[str]],
+    known: dict[tuple[str, str, float], list[str]],
 ) -> tuple[dict[str, object], dict[str, object] | None]:
     day = op.day.isoformat()
     entry: dict[str, object] = {
@@ -82,8 +86,12 @@ def _classify(
         "status": "unmatched", "reason": "", "driver": "", "waybill": "",
     }  # fmt: skip
 
-    times = known.get(_key(op.card, day, op.liters), set())
-    if op.time in times or "" in times:
+    times = known.get(_key(op.card, day, op.liters), [])
+    # A record with the same time matches; a hand-entered one without a time stands for exactly
+    # one fill-up, so a second real fill-up of the same size on that day is still loaded.
+    match = op.time if op.time in times else ("" if "" in times else None)
+    if match is not None:
+        times.remove(match)
         entry["status"] = "duplicate"
         entry["reason"] = "Такая заправка уже есть"
         return entry, None

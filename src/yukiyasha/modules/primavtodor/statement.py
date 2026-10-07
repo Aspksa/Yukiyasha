@@ -93,7 +93,18 @@ def _rows_xls(content: bytes) -> list[list[Any]]:
     except Exception as exc:  # noqa: BLE001
         raise StatementError("Не удалось открыть файл как таблицу Excel (.xls)") from exc
     sheet = book.sheet_by_index(0)
-    return [[sheet.cell_value(r, c) for c in range(sheet.ncols)] for r in range(sheet.nrows)]
+
+    def cell(r: int, c: int) -> Any:
+        value = sheet.cell_value(r, c)
+        if sheet.cell_type(r, c) == xlrd.XL_CELL_DATE:  # a real date/time cell is a serial number
+            try:
+                moment = xlrd.xldate_as_datetime(value, book.datemode)
+            except (xlrd.XLDateError, OverflowError):
+                return value
+            return moment.time() if value < 1 else moment
+        return value
+
+    return [[cell(r, c) for c in range(sheet.ncols)] for r in range(sheet.nrows)]
 
 
 def parse_statement(content: bytes, filename: str) -> tuple[list[FuelOperation], str]:

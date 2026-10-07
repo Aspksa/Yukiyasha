@@ -10,6 +10,7 @@ from datetime import date
 
 from yukiyasha.modules.disk import DiskModule
 from yukiyasha.modules.manifest import ModuleManifest
+from yukiyasha.modules.primavtodor import calendar_ru
 from yukiyasha.modules.primavtodor.errors import (
     InvalidDocumentNameError,
     PrintNotAvailableError,
@@ -37,6 +38,11 @@ from yukiyasha.modules.primavtodor.sections import (
 )
 from yukiyasha.modules.primavtodor.settings import SEASONS, ModuleSettings
 from yukiyasha.modules.primavtodor.timesheet import Timesheet
+from yukiyasha.modules.primavtodor.timesheet_form import (
+    TimesheetForm,
+    TimesheetPerson,
+    fill_timesheet,
+)
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.version import get_version
 
@@ -423,3 +429,48 @@ class PrimavtodorModule:
             composer=settings["composer"],
         )
         return fill_fuel_report(rows, first, signers), f"Анализ расхода ГСМ {month}.xlsx"
+
+    # ----- timesheet on the organisation's form Т-12 -----
+
+    def timesheet_form(self, month: str) -> tuple[bytes, str]:
+        """The month's timesheet filled into the form Т-12."""
+        view = self.timesheet.month_view(month)
+        year, number = int(month[:4]), int(month[5:7])
+        days = view["days"]
+        persons: list[TimesheetPerson] = []
+        for row in view["rows"]:
+            person = TimesheetPerson(
+                name=" ".join(
+                    part
+                    for part in (short_name(str(row["name"] or "")), str(row["position"] or ""))
+                    if part
+                ),
+                personnel_number=str(row["personnel_number"] or ""),
+            )
+            for cell, day in zip(row["cells"], days, strict=True):
+                code = str(cell["code"])
+                if not code:
+                    continue
+                person.marks[int(day["day"])] = code
+                if code == "Я":
+                    person.hours[int(day["day"])] = int(day["hours"]) or calendar_ru.STANDARD_HOURS
+                elif code == "РВ":
+                    person.hours[int(day["day"])] = calendar_ru.STANDARD_HOURS
+            persons.append(person)
+        if not persons:
+            raise PrintNotAvailableError("В справочнике нет сотрудников для табеля")
+        settings = self.settings.print_settings()
+        form = TimesheetForm(
+            month=date(year, number, 1),
+            days_in_month=len(days),
+            off_days={int(d["day"]) for d in days if d["off"]},
+            org_name=settings["org_name"],
+            unit=settings["unit_name"],
+            persons=persons,
+            composer_title=settings["composer_title"],
+            composer=settings["composer"],
+            head_title=settings["approver_title"],
+            head=settings["approver"],
+            compiled=date.today(),
+        )
+        return fill_timesheet(form), f"Табель {month}.xlsx"

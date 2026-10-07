@@ -17,6 +17,14 @@ All notable changes to Yukiyasha are documented here.
   organisation's own card, formulas stay live.
 - **Monthly «Анализ расхода ГСМ»** (ГСМ → *Анализ за месяц*): a row per vehicle, diesel and petrol
   columns, totals, notes for open waybills and overruns above 10%.
+- **Production calendar of Russia for 2026 and 2027** (*Календарь* on the timesheet page; the year
+  is selectable): days off, holidays, transfers and shortened days from the open xmlcalendar.ru
+  data (government decrees), month norms in days and hours. The timesheet paints holidays and
+  transfers, marks a waybill on a day off as **РВ** and shows the month norm. Other years fall
+  back to plain weekends. Check the 2027 data against the final decree when it is published.
+- **Timesheet on your form Т-12** (*Табель Т-12 (.xlsx)*): marks and hours per employee, days off
+  painted from the calendar, the form's own totals stay live, more than 15 people repeat the
+  block. Print settings gained «Структурное подразделение».
 - Dependencies: `openpyxl` (filling the workbooks) and `xlrd` (reading `.xls` statements).
 - The assistant now speaks as **Юкияша** by default: a bundled character pack (persona, honesty
   rules and 400 example replies in 20 categories). A few replies that fit the message are shown to

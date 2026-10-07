@@ -502,6 +502,16 @@ def create_app(
         wanted = month or date.today().strftime("%Y-%m")
         return primavtodor_call(lambda: runtime.primavtodor.timesheet.month_view(wanted))
 
+    @application.get("/api/primavtodor/timesheet/form")
+    def primavtodor_timesheet_form(month: str = Query(max_length=7)) -> Response:
+        """The month's timesheet filled into the form Т-12 as an .xlsx."""
+        content, name = primavtodor_call(lambda: runtime.primavtodor.timesheet_form(month))
+        return Response(
+            content=content,
+            media_type=XLSX_TYPE,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
+        )
+
     @application.put("/api/primavtodor/timesheet/mark")
     def primavtodor_timesheet_mark(request: TimesheetMarkRequest) -> dict[str, object]:
         return primavtodor_call(

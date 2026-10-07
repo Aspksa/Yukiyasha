@@ -144,6 +144,10 @@ as ordinary environment variables (they win over the file). `http://` is accepte
   A fill-up is matched through the card number to the driver and to that driver's waybill on the
   date of the fill-up.
 - **Monthly fuel card:** open a vehicle → choose the month → *Скачать*: a sheet per driver.
+- **Timesheet:** the *Календарь* button shows the production calendar of Russia for 2026 and 2027
+  (choose the year); holidays and transfers are painted in the timesheet and the month norm is
+  shown. *Табель Т-12 (.xlsx)* fills your form. Calendar data: open data of xmlcalendar.ru
+  (government decrees); verify 2027 against the final decree.
 - **Monthly analysis:** ГСМ → *Анализ за месяц*: one row per vehicle with diesel/petrol columns.
 
 ## Quality checks

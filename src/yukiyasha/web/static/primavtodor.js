@@ -156,6 +156,9 @@ function pvWire() {
   pvById("entity-new").addEventListener("click", () => void pvOpenForm(null));
   pvById("entity-filter").addEventListener("input", pvRenderEntity);
 
+  pvById("ts-calendar").addEventListener("click", () => void pvOpenCalendar());
+  pvById("cal-year").addEventListener("change", () => void pvShowCalendarYear());
+  pvById("ts-export").addEventListener("click", () => void pvExportTimesheet());
   pvById("entity-report").addEventListener("click", pvOpenReport);
   pvById("form-report").addEventListener("submit", (event) => void pvDownloadReport(event));
   pvById("entity-import").addEventListener("click", pvOpenImport);
@@ -763,6 +766,86 @@ async function pvApplyImport(event) {
   }
 }
 
+/* ---------- timesheet form and production calendar ---------- */
+
+async function pvExportTimesheet() {
+  const button = pvById("ts-export");
+  button.disabled = true;
+  try {
+    const query = new URLSearchParams({ month: pv.month });
+    const name = await pvDownload(`/api/primavtodor/timesheet/form?${query}`);
+    toast(`Табель сохранён: ${name}`);
+  } catch (error) {
+    toast(`Не удалось сформировать табель: ${describeError(error)}`, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+const PV_MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+
+async function pvOpenCalendar() {
+  const error = pvById("cal-error");
+  error.hidden = true;
+  try {
+    const info = await api("GET", "/api/primavtodor/calendar");
+    const select = pvById("cal-year");
+    const wanted = Number.parseInt(pv.month?.slice(0, 4) ?? "", 10);
+    select.replaceChildren(...info.years.map((year) => new Option(String(year), String(year))));
+    select.value = String(info.years.includes(wanted) ? wanted : info.years[0]);
+    pvById("cal-legend").replaceChildren(
+      ...Object.entries(info.labels).map(([kind, label]) => {
+        const span = document.createElement("span");
+        const swatch = document.createElement("i");
+        swatch.className = `cal-day ${kind}`;
+        span.append(swatch, label);
+        return span;
+      }),
+    );
+    pvById("dlg-calendar").showModal();
+    await pvShowCalendarYear();
+  } catch (failure) {
+    toast(`Не удалось открыть календарь: ${describeError(failure)}`, "error");
+  }
+}
+
+async function pvShowCalendarYear() {
+  const year = pvById("cal-year").value;
+  const error = pvById("cal-error");
+  error.hidden = true;
+  try {
+    const view = await api("GET", `/api/primavtodor/calendar/${year}`);
+    pvById("cal-total").textContent = `${view.workdays} рабочих дней, ${view.hours} ч (40-часовая неделя)`;
+    pvById("cal-grid").replaceChildren(
+      ...view.months.map((month) => {
+        const box = document.createElement("section");
+        box.className = "cal-month";
+        const title = document.createElement("h3");
+        title.textContent = PV_MONTHS[month.month - 1];
+        const norm = document.createElement("small");
+        norm.textContent = `${month.norm.workdays} дн. · ${month.norm.hours} ч`;
+        const days = document.createElement("div");
+        days.className = "cal-days";
+        for (let i = 0; i < month.days[0].weekday; i += 1) days.append(document.createElement("span"));
+        for (const day of month.days) {
+          const cell = document.createElement("span");
+          cell.className = `cal-day ${day.kind}${day.holiday ? " holiday" : ""}${day.transferred ? " moved" : ""}`;
+          cell.textContent = String(day.day);
+          if (day.transferred) cell.title = "Выходной по переносу";
+          else if (day.holiday) cell.title = "Праздничный день";
+          else if (day.kind === "short") cell.title = "Сокращённый день";
+          days.append(cell);
+        }
+        box.append(title, norm, days);
+        return box;
+      }),
+    );
+  } catch (failure) {
+    error.textContent = describeError(failure);
+    error.hidden = false;
+  }
+}
+
 /* ---------- monthly fuel analysis ---------- */
 
 function pvOpenReport() {
@@ -977,7 +1060,16 @@ function pvCodeBadge(code) {
   return span;
 }
 
+function pvRenderNorm(norm) {
+  const text = norm.from_calendar
+    ? `Норма месяца по производственному календарю: ${norm.workdays} раб. дн., ${norm.hours} ч` +
+      (norm.short_days ? ` (сокращённых дней: ${norm.short_days})` : "")
+    : "Календаря на этот год в программе нет: выходными считаются суббота и воскресенье.";
+  pvById("ts-norm").textContent = text;
+}
+
 function pvRenderTimesheet(data) {
+  pvRenderNorm(data.norm);
   const legend = pvById("ts-legend");
   legend.replaceChildren(
     ...data.codes.map((item) => {
@@ -997,7 +1089,8 @@ function pvRenderTimesheet(data) {
   for (const day of data.days) {
     const th = document.createElement("th");
     th.scope = "col";
-    if (day.weekend) th.className = "weekend";
+    if (day.off) th.className = "weekend";
+    if (day.kind === "short") th.title = "Сокращённый день (на час короче)";
     th.append(String(day.day));
     const small = document.createElement("small");
     small.textContent = PV_WEEKDAYS[day.weekday];
@@ -1029,7 +1122,7 @@ function pvRenderTimesheet(data) {
 
     row.cells.forEach((cell, index) => {
       const td = document.createElement("td");
-      if (data.days[index].weekend) td.className = "weekend";
+      if (data.days[index].off) td.className = "weekend";
       const button = document.createElement("button");
       button.type = "button";
       button.className = `ts-cell${cell.source === "manual" ? " manual" : ""}${cell.conflict ? " conflict" : ""}`;

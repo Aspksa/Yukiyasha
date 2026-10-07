@@ -59,6 +59,9 @@ jobs:
               "modules/primavtodor/forms/waybill_form3.xlsx",
               "modules/primavtodor/forms/fuel_card.xlsx",
               "modules/primavtodor/forms/fuel_report.xlsx",
+              "modules/primavtodor/forms/timesheet_t12.xlsx",
+              "modules/primavtodor/calendars/ru-2026.json",
+              "modules/primavtodor/calendars/ru-2027.json",
           ):
               assert f"yukiyasha/{data}" in names, data
           PY

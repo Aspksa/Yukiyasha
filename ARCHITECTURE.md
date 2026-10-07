@@ -55,7 +55,9 @@ pure (plain values in, `.xlsx` bytes out). The waybill sheet holds the form twic
 every value is written in both halves. The monthly card and the report keep live `SUM` formulas.
 `statement.py` reads the fuel-card provider's `.xls`/`.xlsx` (Windows-1251 for `.xls`);
 `fuel_import.py` matches each fill-up card -> employee -> the driver's waybill on that date,
-reports what it cannot match and skips what is already on file. Print settings (organisation,
+reports what it cannot match and skips what is already on file. `calendar_ru.py` reads the bundled production calendar (`calendars/ru-<год>.json`); the timesheet
+uses it for days off, РВ and the month norm, and `timesheet_form.py` fills the form Т-12 (days off
+painted, the form's totals live, the last block repeated beyond 15 people). Print settings (organisation,
 signers, control wording) live next to the season in `settings.json`.
 
 ## Audit

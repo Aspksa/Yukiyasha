@@ -238,6 +238,14 @@
             </div>
           </div>
           <div class="head-actions">
+            <button class="btn" id="ts-calendar" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-sec-timesheet"/></svg>
+              <span>Календарь</span>
+            </button>
+            <button class="btn" id="ts-export" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+              <span>Табель Т-12 (.xlsx)</span>
+            </button>
             <button class="btn" id="ts-files" type="button">
               <svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>
               <span>Файлы раздела</span>
@@ -256,6 +264,7 @@
           <button class="icon-btn" id="ts-next" type="button" aria-label="Следующий месяц"><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button>
           <button class="btn" id="ts-today" type="button">Текущий месяц</button>
         </div>
+        <p class="ts-norm" id="ts-norm" aria-live="polite"></p>
         <div class="legend" id="ts-legend" aria-label="Обозначения"></div>
         <div class="table-wrap ts-wrap" id="ts-wrap">
           <table class="ts-table" id="ts-table"></table>
@@ -411,6 +420,22 @@
         <button class="btn" type="button" data-close>Закрыть</button>
         <button class="btn btn-primary" type="submit" id="report-download">Скачать (.xlsx)</button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-calendar" class="dlg-wide" aria-labelledby="dlg-calendar-title">
+    <form method="dialog" id="form-calendar">
+      <h2 id="dlg-calendar-title">Производственный календарь</h2>
+      <div class="cal-bar">
+        <label for="cal-year">Год</label>
+        <select id="cal-year"></select>
+        <span class="cal-total" id="cal-total"></span>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div class="cal-legend" id="cal-legend"></div>
+      <p class="dlg-note">Данные по постановлениям Правительства о переносе выходных дней (открытые данные xmlcalendar.ru). Табель использует этот календарь: праздники и переносы закрашены, работа в выходной помечается «РВ».</p>
+      <p class="dlg-error" id="cal-error" role="alert" hidden></p>
+      <div class="dlg-actions"><button class="btn" type="button" data-close>Закрыть</button></div>
     </form>
   </dialog>
 

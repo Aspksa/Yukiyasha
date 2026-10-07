@@ -419,3 +419,20 @@ def test_primavtodor_sections_endpoint_is_503_when_the_module_is_not_ready(
     response = client.get("/api/primavtodor/sections")
 
     assert response.status_code == 503
+
+
+def test_every_primavtodor_section_has_an_icon_and_a_colour(client: TestClient) -> None:
+    """The UI derives icon `i-sec-<id>` and colour `[data-sec="<id>"]` from the section id."""
+    from yukiyasha.modules.primavtodor import SECTIONS
+
+    html = client.get("/").text
+    css = client.get("/static/style.css").text
+    hues = []
+
+    for section in SECTIONS:
+        assert f'id="i-sec-{section.id}"' in html, f"missing icon for {section.id}"
+        rule = f'[data-sec="{section.id}"] {{ --h: '
+        assert rule in css, f"missing colour for {section.id}"
+        hues.append(int(css.split(rule)[1].split(";")[0]))
+
+    assert len(set(hues)) == len(hues), "section hues must be distinct"

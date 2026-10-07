@@ -186,6 +186,26 @@ function icon(id, className = "icon") {
   return svg;
 }
 
+/** Icon symbol for a Примавтодор section; falls back to a plain folder if none is drawn. */
+function sectionIconId(sectionId) {
+  const id = `i-sec-${sectionId}`;
+  return document.getElementById(id) ? id : "i-folder";
+}
+
+/** Disk path -> section id, filled from the module API so folder icons need no hard-coded paths. */
+const sectionByPath = new Map();
+
+async function loadSectionIndex() {
+  try {
+    const sections = await api("GET", "/api/primavtodor/sections");
+    sectionByPath.clear();
+    for (const section of sections) sectionByPath.set(section.path, section.id);
+    return sections;
+  } catch {
+    return null; // icons are decoration: a failure must never break the file list
+  }
+}
+
 function toast(message, kind = "ok") {
   const node = document.createElement("div");
   node.className = `toast${kind === "error" ? " error" : ""}`;
@@ -442,7 +462,13 @@ function renderEntries() {
       meta.className = "meta";
       meta.textContent = isDir ? "папка" : formatSize(entry.size);
 
-      button.append(icon(isDir ? "i-folder" : "i-file"), name, meta);
+      const sectionId = isDir ? sectionByPath.get(entry.path) : undefined;
+      if (sectionId) button.dataset.sec = sectionId;
+      button.append(
+        icon(sectionId ? sectionIconId(sectionId) : isDir ? "i-folder" : "i-file"),
+        name,
+        meta,
+      );
       button.addEventListener("click", () =>
         navigate(isDir ? { dir: entry.path } : { file: entry.path }),
       );
@@ -678,10 +704,19 @@ function renderModuleSections(sections) {
           const card = document.createElement("button");
           card.type = "button";
           card.className = "section-card";
+          card.dataset.sec = section.id;
+
+          const tile = document.createElement("span");
+          tile.className = "sec-tile";
+          tile.append(icon(sectionIconId(section.id)));
 
           const title = document.createElement("span");
           title.className = "card-title";
-          title.append(icon("i-folder"), section.title);
+          title.textContent = section.title;
+
+          const head = document.createElement("span");
+          head.className = "card-head";
+          head.append(tile, title);
 
           const description = document.createElement("span");
           description.className = "card-desc";
@@ -693,7 +728,7 @@ function renderModuleSections(sections) {
             ? `${section.count} ${plural(section.count, "объект", "объекта", "объектов")}`
             : "пусто";
 
-          card.append(title, description, count);
+          card.append(head, description, count);
           card.addEventListener("click", () => navigate({ dir: section.path }));
           return card;
         }),
@@ -728,6 +763,8 @@ async function loadModule() {
   try {
     const sections = await api("GET", "/api/primavtodor/sections", { signal: controller.signal });
     if (controller.signal.aborted) return;
+    sectionByPath.clear();
+    for (const section of sections) sectionByPath.set(section.path, section.id);
     renderModuleSections(sections);
   } catch (error) {
     if (isAbort(error)) return;
@@ -854,5 +891,9 @@ setInterval(() => {
   const route = parseHash(window.location.hash);
   if (!window.location.hash) history.replaceState(null, "", routeToHash(route));
   void refreshRuntime();
+  // Section colours/icons for folders; once known, redraw the list that may already be shown.
+  void loadSectionIndex().then((sections) => {
+    if (sections && state.view === "files" && state.entries.length) renderEntries();
+  });
   void applyRoute(route);
 })();

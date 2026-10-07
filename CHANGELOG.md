@@ -5,6 +5,11 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- own icon and colour for each Примавтодор section (calendar, people, garage, drop, contract,
+  receipt, envelope, seal, megaphone): a tinted tile on the module cards and a coloured icon on
+  the section folders in the file list; colours are tuned separately for dark and light themes;
+  icons and hues are derived from the stable section id (`i-sec-<id>`, `[data-sec="<id>"]`) and
+  a test checks that every backend section has both;
 - module **Примавтодор** (`primavtodor`): registered after the disk, it creates and owns
   `projects/work/Примавтодор` with nine section folders — Табель, Сотрудники, Гараж,
   Горюче-смазочные материалы (group "Учёт"); Договора, Счёт-оферта, Служебные записки,

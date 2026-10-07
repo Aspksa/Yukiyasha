@@ -4,7 +4,7 @@ Yukiyasha is a modular AI-oriented platform foundation with a local web interfac
 
 ## Current version
 
-**v0.6.0 — AI write proposals with human approval**
+**v0.7.0 — In-chat proposal review**
 
 The current release provides:
 - modular Python core and module registry with explicit lifecycle and health;
@@ -116,9 +116,9 @@ as ordinary environment variables (they win over the file). `http://` is accepte
   a validated **proposal**. A proposal changes nothing until a person separately approves its id
   through the local API. Update/delete proposals capture the source record fingerprint and become
   `stale` instead of overwriting data that changed after the proposal was created.
-- Proposal lifecycle is transparent through `GET /api/proposals`,
-  `GET /api/proposals/{id}`, `POST /api/proposals/{id}/approve` and
-  `POST /api/proposals/{id}/reject`. Approval/rejection is protected by the same-origin boundary.
+- Proposal lifecycle is transparent through the local API and now also appears directly in the
+  assistant conversation as review cards with old/new diff, status, and local approve/reject
+  controls for pending proposals. No global action buttons were added.
 - Tool disclosures and proposal lifecycle events are written to
   `system/audit/YYYY-MM-DD/*.json` without copying the business payload itself.
 - **Long-term memory** is separate from chat history and stored as JSON under

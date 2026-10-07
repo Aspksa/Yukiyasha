@@ -21,6 +21,14 @@ The first release establishes:
 
 ## Quick start
 
+### Windows — one click
+
+Double-click `Yukiyasha.bat`. On the first launch it creates a local `.venv`,
+installs the project dependencies, starts the web server, and opens
+`http://127.0.0.1:8000` in the default browser.
+
+### Manual launch
+
 ```bash
 python -m venv .venv
 # Windows

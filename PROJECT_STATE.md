@@ -4,7 +4,8 @@
 
 - Version: **0.1.0**
 - Stage: **Foundation / Core + Web**
-- Branch under development: `feat/v0.1.0-foundation-web`
+- Status: **merged to main**
+- Release baseline commit: `ef68af0`
 
 ## Implemented
 
@@ -21,12 +22,20 @@
 - GitHub Actions CI on Ubuntu and Windows for Python 3.11-3.13.
 - Architecture and changelog documentation.
 
+## Verification
+
+- v0.1.0 feature branch CI: **green**.
+- Ruff: **passed**.
+- Pytest: **passed**.
+- Platforms: **Ubuntu + Windows**.
+- Python: **3.11, 3.12, 3.13**.
+
 ## Invariants
 
 - Core does not depend on the web layer.
 - Browser state is derived from API state.
 - The version for this release is 0.1.0.
-- CI must be green before merge to main.
+- CI must be green before merging feature work to main.
 
 ## Known limitations
 
@@ -38,6 +47,6 @@
 
 ## Exact next_action
 
-After v0.1.0 is green and merged, build **v0.2.0 Module Runtime Foundation**:
+Build **v0.2.0 Module Runtime Foundation**:
 module manifest -> discovery -> validation -> registry -> lifecycle -> health ->
 permissions boundary, while keeping modules isolated from the web transport.

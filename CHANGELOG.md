@@ -4,6 +4,22 @@ All notable changes to Yukiyasha are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Cars and cards move between drivers, the history is kept in the employee.** Change a
+  driver's car or fuel card at any time (today the Hino, tomorrow the Lexus; a lost card is
+  detached and another attached) with an optional *Смена … действует с* date; the employee shows
+  the history of cars and cards. A statement fill-up is matched to the card holder *of that day*
+  and to the car the driver had *that day*, so a change never rewrites the past. Existing
+  employees keep working as before (one open interval).
+- **Manual fill-ups:** *Оплата*: by fuel card (default), cash, or without a card. Cash and
+  card-less fill-ups need no card and no driver, only a car; they count for the car in the month's
+  calculations and are never mistaken for card operations of a statement.
+- **The remainder stays with the car.** The fuel left after a car's last closed waybill is shown on
+  the vehicle and becomes the starting remainder of the next waybill of that car, whoever drives
+  (carried over by the server when the field is empty, and filled in by the form).
+- **Diesel and petrol are never added together**: the calculations are totalled per fuel kind
+  (diesel, petrol, gas) and show the kind per car.
+
 ### Changed
 - **Fill-ups follow the fuel card, not the waybill.** A fuel record no longer needs a waybill:
   the card belongs to the driver and the driver to a car, so a statement fill-up with no waybill

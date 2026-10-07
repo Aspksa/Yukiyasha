@@ -287,16 +287,3 @@ def test_a_second_real_fill_up_is_not_swallowed_by_a_hand_entered_one(module) ->
     assert len(module.data.snapshot("fuel")) == 2
 
 
-def test_a_changed_driver_card_does_not_make_old_fill_ups_look_new(module) -> None:
-    waybill = prepare(module)
-    content = xlsx(statement_rows((CARD, [("07.10.2026", "09:17:16", PETROL, 70.0, 40.0)])))
-    module.import_fuel_statement(content, "s.xlsx", apply=True)
-    driver = module.data.get("employees", waybill["values"]["driver_id"])["values"]
-    module.data.update("employees", waybill["values"]["driver_id"],
-                       {**driver, "fuel_card_number": "7001000099999"})  # fmt: skip
-    moved = ("7001000099999", [("07.10.2026", "09:17:16", PETROL, 70.0, 40.0)])
-    again = xlsx(statement_rows(moved))
-
-    report = module.import_fuel_statement(again, "s2.xlsx", apply=True)
-
-    assert report["counts"]["duplicate"] == 1 and len(module.data.snapshot("fuel")) == 1

@@ -54,7 +54,9 @@ def test_start_end_mileage_actual_and_norm(module: PrimavtodorModule) -> None:
     assert (car["norm"], car["norm_rate"]) == (35, 10)  # 350 km at 10 l per 100 km
     assert car["deviation"] == -8 and car["deviation_pct"] == pytest.approx(-22.9, abs=0.1)
     assert car["notes"] == []
-    assert result["totals"]["consumption"] == 27 and result["totals"]["norm"] == 35
+    diesel = result["totals"]["diesel"]
+    assert diesel["consumption"] == 27 and diesel["norm"] == 35
+    assert "petrol" not in result["totals"]  # diesel and petrol are never added together
 
 
 def test_per_driver_figures(module: PrimavtodorModule) -> None:
@@ -124,15 +126,30 @@ def test_mixed_seasons_have_no_single_rate_but_a_summed_norm(module: Primavtodor
 
 
 def test_empty_month_and_bad_month(module: PrimavtodorModule) -> None:
-    assert module.month_calculations("2026-10") == {
-        "month": "2026-10",
-        "vehicles": [],
-        "totals": {"km_waybills": 0, "fuel_start": 0, "fills": 0, "fuel_end": 0,
-                   "consumption": 0, "norm": 0, "deviation": 0},
-    }  # fmt: skip
+    empty = module.month_calculations("2026-10")
+    assert empty == {"month": "2026-10", "vehicles": [], "totals": {}}
     with pytest.raises(RecordValidationError) as exc:
         module.month_calculations("октябрь")
     assert "month" in exc.value.fields
+
+
+def test_diesel_and_petrol_are_totalled_separately(module: PrimavtodorModule) -> None:
+    diesel = make_vehicle(module, plate="Д1", model="КАМАЗ", fuel_type="ДТ", norm_summer="30")
+    petrol = make_vehicle(module, plate="Б1", model="Toyota", fuel_type="АИ-95", norm_summer="10")
+    first = make_driver(module, diesel["id"], personnel_number="1", fuel_card_number="1")
+    second = make_driver(module, petrol["id"], personnel_number="2", fuel_card_number="2")
+    make_waybill(module, first, diesel, number="1", date="2026-10-02", season="summer",
+                 odometer_out=0, odometer_in=100, fuel_out=50, fuel_in=20)  # fmt: skip
+    make_waybill(module, second, petrol, number="2", date="2026-10-02", season="summer",
+                 odometer_out=0, odometer_in=100, fuel_out=20, fuel_in=10)  # fmt: skip
+
+    result = module.month_calculations("2026-10")
+
+    assert [(v["plate"], v["fuel_kind_label"]) for v in result["vehicles"]] == [
+        ("Д1", "Дизель"), ("Б1", "Бензин")]  # fmt: skip
+    assert result["totals"]["diesel"]["consumption"] == 30
+    assert result["totals"]["petrol"]["consumption"] == 10
+    assert result["totals"]["diesel"]["vehicles"] == 1
 
 
 @pytest.fixture

@@ -26,6 +26,16 @@ from yukiyasha.modules.primavtodor.schema import (
 )
 
 ROUND = 3
+FUEL_KINDS = {"diesel": "Дизель", "petrol": "Бензин", "gas": "Газ"}
+SUM_KEYS = ("km_waybills", "fuel_start", "fills", "fuel_end", "consumption", "norm", "deviation")
+
+
+def fuel_kind(fuel_type: object) -> str:
+    """Diesel and petrol are never added together: litres of different fuels are not one sum."""
+    text = str(fuel_type or "")
+    if text == "ДТ":
+        return "diesel"
+    return "gas" if text == "Газ" else "petrol"
 
 
 def _num(value: object) -> float | None:
@@ -162,6 +172,8 @@ def vehicle_calculations(data: Records, month: str) -> dict[str, object]:
                 "plate": str(vehicle.get("plate") or "?"),
                 "model": str(vehicle.get("model") or ""),
                 "fuel_type": str(vehicle.get("fuel_type") or ""),
+                "fuel_kind": fuel_kind(vehicle.get("fuel_type")),
+                "fuel_kind_label": FUEL_KINDS[fuel_kind(vehicle.get("fuel_type"))],
                 "waybills": len(rows),
                 "closed": len(closed),
                 "fills_without_waybill": len(unlinked),
@@ -193,12 +205,15 @@ def vehicle_calculations(data: Records, month: str) -> dict[str, object]:
             }
         )
 
-    result.sort(key=lambda v: str(v["plate"]))
-    sums_all = {
-        key: _r(sum(float(v[key] or 0) for v in result))
-        for key in ("km_waybills", "fuel_start", "fills", "fuel_end", "consumption", "norm")
-    }
-    sums_all["deviation"] = _r(
-        sum(float(v["deviation"]) for v in result if v["deviation"] is not None)
-    )
-    return {"month": month, "vehicles": result, "totals": sums_all}
+    result.sort(key=lambda v: (str(v["fuel_kind"]), str(v["plate"])))
+    totals: dict[str, dict[str, object]] = {}
+    for kind, label in FUEL_KINDS.items():
+        cars = [v for v in result if v["fuel_kind"] == kind]
+        if not cars:
+            continue
+        sums: dict[str, object] = {"label": label, "vehicles": len(cars)}
+        for key in SUM_KEYS:
+            values = [float(v[key]) for v in cars if v.get(key) is not None]
+            sums[key] = _r(sum(values))
+        totals[kind] = sums
+    return {"month": month, "vehicles": result, "totals": totals}

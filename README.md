@@ -149,6 +149,10 @@ as ordinary environment variables (they win over the file). `http://` is accepte
   does not add up (overruns, odometer and fuel gaps, wrong fuel, fill-ups over the tank volume —
   set it on the vehicle, unclosed waybills, ...). Accept a finding you have checked; download the
   whole month (timesheet, analysis, fuel cards, findings) as one zip.
+- **Employees, cars and cards:** change a driver's car or fuel card in the employee form (with a
+  date if it is not today); the history is kept and old fill-ups resolve to the holder and the car
+  of their own day. A manual fill-up (cash, or no card) needs only a car. The tank's remainder
+  stays with the car: the next driver starts with it.
 - **Calculations:** *Закрытие месяца* also shows, per vehicle, the fuel at the start (first
   waybill) and at the end (last closed waybill), the mileage by waybills and by the odometer, the
   actual consumption (start + fill-ups − end), the consumption by the norm and the deviation.

@@ -528,6 +528,9 @@ function pvWireForm(entity, lists, isNew) {
     const driverSelect = field("driver_id");
     const vehicleSelect = field("vehicle_id");
     const odometer = field("odometer_out");
+    const fuelOut = field("fuel_out");
+    if (isNew) fuelOut.dataset.auto = "1"; // the preset 0 is not something a person typed
+    fuelOut.addEventListener("input", () => delete fuelOut.dataset.auto);
 
     driverSelect.addEventListener("change", () => {
       const driver = (lists.employees ?? []).find((item) => item.id === driverSelect.value);
@@ -538,9 +541,17 @@ function pvWireForm(entity, lists, isNew) {
       }
     });
     vehicleSelect.addEventListener("change", () => {
+      const vehicle = (lists.vehicles ?? []).find((item) => item.id === vehicleSelect.value);
+      // The tank's remainder goes with the car: whoever takes it starts with what was left.
+      const remainder = vehicle?.computed.fuel_remainder;
+      const fuelTyped = fuelOut.value.trim() !== "" && fuelOut.dataset.auto !== "1";
+      if (isNew && !fuelTyped && remainder !== null && remainder !== undefined) {
+        fuelOut.value = String(remainder);
+        fuelOut.dataset.auto = "1";
+        fuelOut.title = `Остаток в баке: ${vehicle.computed.remainder_note}`;
+      }
       const userTyped = odometer.value.trim() !== "" && odometer.dataset.auto !== "1";
       if (!isNew || userTyped) return;
-      const vehicle = (lists.vehicles ?? []).find((item) => item.id === vehicleSelect.value);
       const lastClosed = pv.records
         .filter((record) => record.values.vehicle_id === vehicleSelect.value && record.values.odometer_in !== null)
         .sort((a, b) => b.values.odometer_in - a.values.odometer_in)[0];
@@ -904,7 +915,7 @@ function pvRenderCalculations(data) {
     const row = document.createElement("tr");
     const who = document.createElement("th");
     who.scope = "row";
-    who.textContent = `${car.plate} ${car.model}`.trim();
+    who.textContent = `${car.plate} ${car.model} · ${car.fuel_kind_label}`.trim();
     const small = document.createElement("small");
     const drivers = car.drivers.map((d) => d.driver).join(", ");
     const same = car.first && car.last && car.last.number === car.first.number;
@@ -939,21 +950,22 @@ function pvRenderCalculations(data) {
       body.append(noteRow);
     }
   }
-  const totals = data.totals;
   const footer = document.createElement("tfoot");
-  const totalRow = document.createElement("tr");
-  const label = document.createElement("th");
-  label.textContent = "Итого";
-  totalRow.append(label);
-  for (const text of [
-    num(totals.fuel_start), num(totals.fills), num(totals.fuel_end), num(totals.km_waybills, 0), "",
-    num(totals.consumption), num(totals.norm), `${totals.deviation > 0 ? "+" : ""}${num(totals.deviation)}`,
-  ]) {
-    const td = document.createElement("td");
-    td.textContent = text;
-    totalRow.append(td);
+  for (const totals of Object.values(data.totals)) { // diesel and petrol are never added together
+    const totalRow = document.createElement("tr");
+    const label = document.createElement("th");
+    label.textContent = `Итого ${totals.label.toLowerCase()} (${totals.vehicles})`;
+    totalRow.append(label);
+    for (const text of [
+      num(totals.fuel_start), num(totals.fills), num(totals.fuel_end), num(totals.km_waybills), "",
+      num(totals.consumption), num(totals.norm), `${totals.deviation > 0 ? "+" : ""}${num(totals.deviation)}`,
+    ]) {
+      const td = document.createElement("td");
+      td.textContent = text;
+      totalRow.append(td);
+    }
+    footer.append(totalRow);
   }
-  footer.append(totalRow);
   table.replaceChildren(head, body, footer);
 }
 

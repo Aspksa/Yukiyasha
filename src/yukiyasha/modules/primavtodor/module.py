@@ -549,7 +549,7 @@ class PrimavtodorModule:
         buffer = io.StringIO()
         writer = csv.writer(buffer, delimiter=";")
         writer.writerow([
-            "Машина", "Водители", "Первый лист", "Последний закрытый лист",
+            "Машина", "Топливо", "Водители", "Первый лист", "Последний закрытый лист",
             "Остаток на начало, л", "Заправлено, л", "Остаток на конец, л",
             "Пробег по листам, км", "Пробег по одометру, км", "Расход факт, л",
             "По норме, л", "Отклонение, л", "Отклонение, %", "Примечания",
@@ -558,6 +558,7 @@ class PrimavtodorModule:
             last = car["last"]
             writer.writerow([
                 f"{car['plate']} {car['model']}".strip(),
+                car["fuel_kind_label"],
                 ", ".join(d["driver"] for d in car["drivers"]),
                 f"№ {car['first']['number']} от {car['first']['date']}",
                 f"№ {last['number']} от {last['date']}" if last else "",

@@ -14,7 +14,12 @@ same statement creates nothing twice. ``apply=False`` only reports what would ha
 """
 
 from yukiyasha.modules.primavtodor.errors import RecordValidationError
-from yukiyasha.modules.primavtodor.records import Records, format_date
+from yukiyasha.modules.primavtodor.records import (
+    Records,
+    card_owner_at,
+    format_date,
+    vehicle_at,
+)
 from yukiyasha.modules.primavtodor.schema import (
     KIND_EMPLOYEES,
     KIND_FUEL,
@@ -38,19 +43,12 @@ def import_statement(
     operations, period = parse_statement(content, filename)
 
     employees = data.snapshot(KIND_EMPLOYEES)
-    drivers_by_id = {e["id"]: e for e in employees}
-    drivers = {str(e.get("fuel_card_number")): e for e in employees if e.get("fuel_card_number")}
     waybills_by_driver_day: dict[tuple[str, str], list[dict[str, object]]] = {}
     for waybill in data.snapshot(KIND_WAYBILLS):
         index = (str(waybill.get("driver_id")), str(waybill.get("date")))
         waybills_by_driver_day.setdefault(index, []).append(waybill)
     vehicles = {str(v["id"]): v for v in data.snapshot(KIND_VEHICLES)}
 
-    # The card is the driver's current one (the card stored on an old fill-up may be outdated).
-    card_of_waybill = {
-        w["id"]: str(drivers_by_id.get(w.get("driver_id"), {}).get("fuel_card_number") or "")
-        for w in data.snapshot(KIND_WAYBILLS)
-    }
     month_waybills: dict[str, set[str]] = {}  # driver -> cars of the driver's waybills, by month
     for w in data.snapshot(KIND_WAYBILLS):
         key = f"{w.get('driver_id')}|{str(w.get('date'))[:7]}"
@@ -58,13 +56,9 @@ def import_statement(
     # (card, date, litres) -> times already on file ("" for a record entered by hand)
     known: dict[tuple[str, str, float], list[str]] = {}
     for fuel in data.snapshot(KIND_FUEL):
-        owner = drivers_by_id.get(fuel.get("driver_id"), {})
-        card = (
-            card_of_waybill.get(fuel.get("waybill_id"))
-            or str(owner.get("fuel_card_number") or "")
-            or fuel.get("card_number")
-        )
-        key = _key(card, fuel.get("date"), fuel.get("liters"))
+        if fuel.get("payment") in ("cash", "other"):
+            continue  # not a card operation: a statement can never contain it
+        key = _key(fuel.get("card_number"), fuel.get("date"), fuel.get("liters"))
         known.setdefault(key, []).append(str(fuel.get("time") or ""))
 
     report: list[dict[str, object]] = []
@@ -72,7 +66,7 @@ def import_statement(
     liters_new = 0.0
     for op in operations:
         entry, payload = _classify(
-            op, drivers, waybills_by_driver_day, month_waybills, vehicles, known
+            op, employees, waybills_by_driver_day, month_waybills, vehicles, known
         )
         if payload is not None and apply:
             try:
@@ -99,7 +93,7 @@ def import_statement(
 
 def _classify(
     op: FuelOperation,
-    drivers: dict[str, dict[str, object]],
+    employees: list[dict[str, object]],
     waybills: dict[tuple[str, str], list[dict[str, object]]],
     month_waybills: dict[str, set[str]],
     vehicles: dict[str, dict[str, object]],
@@ -122,7 +116,7 @@ def _classify(
         entry["reason"] = "Такая заправка уже есть"
         return entry, None
 
-    driver = drivers.get(op.card)
+    driver = card_owner_at(employees, op.card, day)  # who held the card on that day
     if driver is None:
         entry["reason"] = f"Карта {op.card} не закреплена ни за одним сотрудником"
         return entry, None
@@ -155,7 +149,7 @@ def _classify(
             )
             return entry, None
         else:
-            vehicle_id = str(driver.get("vehicle_id") or "") or None
+            vehicle_id = vehicle_at(driver, day) or None
             if vehicle_id is None:
                 month_cars = month_waybills.get(f"{driver['id']}|{day[:7]}", set())
                 if len(month_cars) == 1:

@@ -36,6 +36,12 @@ WAYBILL_FORMS: tuple[tuple[str, str], ...] = (
     ("truck", "№ 4-П — грузовой автомобиль"),
 )
 
+PAYMENTS: tuple[tuple[str, str], ...] = (
+    ("card", "По топливной карте"),
+    ("cash", "За наличные"),
+    ("other", "Без карты (другое)"),
+)
+
 SEASONS: tuple[tuple[str, str], ...] = (("summer", "Лето"), ("winter", "Зима"))
 
 KIND_EMPLOYEES = "employees"
@@ -145,7 +151,10 @@ EMPLOYEES = Entity(
         Field("phone", "Телефон", TEXT, max_len=40),
         Field("fuel_card_number", "Номер топливной карты", TEXT, unique=True, max_len=40,
               help="Карта закреплена за водителем; по ней оформляются заправки"),
-        Field("vehicle_id", "Закреплённая машина", REF, ref=KIND_VEHICLES),
+        Field("vehicle_id", "Закреплённая машина", REF, ref=KIND_VEHICLES,
+              help="Сменить машину или карту можно в любой момент: история сохраняется"),
+        Field("assignment_date", "Смена машины или карты действует с", DATE,
+              help="Пусто — с сегодняшнего дня. Укажите дату, если меняете задним числом"),
         Field("active", "Работает", BOOL, default=True),
     ),
     columns=(
@@ -154,6 +163,10 @@ EMPLOYEES = Entity(
         Column("personnel_number", "Таб. №"),
         Column("fuel_card_number", "Топливная карта"),
         Column("vehicle_id", "Машина"),
+    ),
+    details=(
+        ("vehicle_history_text", "История машин", ""),
+        ("card_history_text", "История карт", ""),
     ),
 )
 
@@ -187,6 +200,10 @@ VEHICLES = Entity(
         Column("norm_winter", "Зима", "number", "л/100 км"),
         Column("norm_active", "Действует", "number", "л/100 км"),
         Column("drivers", "Водитель"),
+    ),
+    details=(
+        ("fuel_remainder", "Остаток топлива в баке", "л"),
+        ("remainder_note", "Откуда остаток", ""),
     ),
 )
 
@@ -259,12 +276,15 @@ FUEL = Entity(
         Field("fuel_type", "Вид топлива", CHOICE, options=FUEL_TYPES,
               help="Если не указан, берётся из машины"),
         Field("station", "АЗС", TEXT, max_len=120),
+        Field("payment", "Оплата", CHOICE, default="card", options=PAYMENTS,
+              help="Наличные и заправки без карты вносятся вручную: карта не нужна"),
     ),
     columns=(
         Column("date", "Дата", "date"),
         Column("waybill_id", "Путевой лист"),
         Column("driver", "Водитель"),
         Column("vehicle", "Машина"),
+        Column("payment_label", "Оплата"),
         Column("card_number", "Топливная карта"),
         Column("liters", "Литры", "number", "л"),
         Column("amount", "Сумма", "number", "₽"),

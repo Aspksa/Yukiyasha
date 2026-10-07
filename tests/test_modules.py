@@ -11,6 +11,7 @@ from yukiyasha.modules.disk import (
     DiskEncodingError,
     DiskError,
     DiskModule,
+    DiskNotReadyError,
     DiskPathError,
     DiskSecurityError,
     DiskTooLargeError,
@@ -262,3 +263,95 @@ def test_disk_delete_non_empty_directory(tmp_path: Path) -> None:
 
     with pytest.raises(DiskDirectoryNotEmptyError):
         disk.delete("folder")
+
+
+def test_disk_rejects_operations_outside_ready_state(tmp_path: Path) -> None:
+    disk = DiskModule(tmp_path / "disk")
+
+    with pytest.raises(DiskNotReadyError):
+        disk.list_entries()
+
+    disk.start()
+    disk.stop()
+
+    with pytest.raises(DiskNotReadyError):
+        disk.read_text("anything.txt")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "a\x00b.txt",
+        "a:b.txt",
+        "CON",
+        "nul.txt",
+        "COM1.log",
+        "name.",
+        "name ",
+        "folder\\file.txt",
+    ],
+)
+def test_disk_rejects_nonportable_windows_paths(tmp_path: Path, path: str) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+
+    with pytest.raises(DiskPathError):
+        disk.write_text(path, "blocked")
+
+
+def test_disk_rejects_internal_symlink_target(tmp_path: Path) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+    disk.write_text("a.txt", "original")
+    link = disk.root / "ln"
+
+    try:
+        link.symlink_to(disk.root / "a.txt")
+    except OSError:
+        pytest.skip("Symlink creation is unavailable on this platform")
+
+    with pytest.raises(DiskSecurityError, match="Symlinks"):
+        disk.delete("ln")
+
+    assert (disk.root / "a.txt").read_text() == "original"
+    assert link.is_symlink()
+
+
+def test_disk_no_overwrite_falls_back_when_hardlinks_unsupported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+
+    def unsupported_link(*args, **kwargs) -> None:
+        raise OSError(errno.EPERM, "hard links unsupported")
+
+    monkeypatch.setattr(os, "link", unsupported_link)
+    disk.write_text("fallback.txt", "content", overwrite=False)
+
+    assert disk.read_text("fallback.txt") == "content"
+    assert not list(disk.root.glob(".yukiyasha-*"))
+
+
+@pytest.mark.parametrize("path", ["projects", "projects/work", "projects/home"])
+def test_disk_protects_builtin_project_directories(tmp_path: Path, path: str) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+
+    with pytest.raises(DiskSecurityError, match="cannot be deleted"):
+        disk.delete(path)
+
+
+def test_disk_hides_and_cleans_stale_temp_files(tmp_path: Path) -> None:
+    root = tmp_path / "disk"
+    root.mkdir()
+    stale = root / ".yukiyasha-stale"
+    stale.write_text("partial")
+
+    disk = DiskModule(root)
+    disk.start()
+
+    assert not stale.exists()
+    live_temp = root / ".yukiyasha-live"
+    live_temp.write_text("partial")
+    assert all(entry["name"] != live_temp.name for entry in disk.list_entries())

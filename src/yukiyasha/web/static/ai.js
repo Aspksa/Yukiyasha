@@ -8,6 +8,7 @@
  */
 
 const proposalReview = YukiProposal;
+const documentPresentation = YukiDocuments;
 
 const ai = {
   status: null, // { configured, problem, provider, model, assistant_name, limits, ... }
@@ -198,10 +199,102 @@ function aiRenderHello() {
   aiHideError();
 }
 
-function aiBubble(role, text, streaming = false) {
+async function aiHydrateDocumentPreview(card, doc) {
+  if (doc.preview) return;
+  try {
+    const file = await api("GET", "/api/disk/file", { params: { path: doc.path } });
+    const preview = documentPresentation.previewText(file.content);
+    if (!preview || !card.isConnected) return;
+    const body = card.querySelector(".ai-document-body");
+    const meta = card.querySelector(".ai-document-meta");
+    const paragraph = document.createElement("p");
+    paragraph.className = "ai-document-preview";
+    paragraph.textContent = preview;
+    body.insertBefore(paragraph, meta);
+  } catch {
+    // The card is still useful as document metadata even if preview cannot be loaded.
+  }
+}
+
+function aiDocumentCard(rawDocument) {
+  const doc = documentPresentation.normalize(rawDocument);
+  if (!doc) return null;
+
+  const card = document.createElement("article");
+  card.className = "ai-document-card";
+
+  const page = document.createElement("div");
+  page.className = "ai-document-page";
+  const format = document.createElement("span");
+  format.className = "ai-document-format";
+  format.textContent = doc.extension;
+  const lines = document.createElement("span");
+  lines.className = "ai-document-page-lines";
+  lines.setAttribute("aria-hidden", "true");
+  page.append(format, lines);
+
+  const body = document.createElement("div");
+  body.className = "ai-document-body";
+  const eyebrow = document.createElement("span");
+  eyebrow.className = "ai-document-eyebrow";
+  eyebrow.textContent = doc.sectionTitle;
+  const title = document.createElement("strong");
+  title.className = "ai-document-title";
+  title.textContent = doc.title;
+  body.append(eyebrow, title);
+
+  if (doc.preview) {
+    const preview = document.createElement("p");
+    preview.className = "ai-document-preview";
+    preview.textContent = doc.preview;
+    body.append(preview);
+  }
+
+  const meta = document.createElement("div");
+  meta.className = "ai-document-meta";
+  const type = document.createElement("span");
+  type.textContent = doc.extension;
+  meta.append(type);
+  if (doc.size) {
+    const size = document.createElement("span");
+    size.textContent = doc.size;
+    meta.append(size);
+  }
+  body.append(meta);
+
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "ai-document-open";
+  action.setAttribute("aria-label", `Открыть документ «${doc.title}»`);
+  action.innerHTML = "<span>Открыть</span><span aria-hidden=\"true\">↗</span>";
+  action.addEventListener("click", () => navigate({ file: doc.path }));
+
+  card.append(page, body, action);
+  void aiHydrateDocumentPreview(card, doc);
+  return card;
+}
+
+function aiAppendDocuments(node, documents) {
+  if (!Array.isArray(documents) || !documents.length) return;
+  node.querySelector(".ai-document-list")?.remove();
+  const list = document.createElement("div");
+  list.className = "ai-document-list";
+  list.setAttribute("aria-label", "Документы");
+  for (const rawDocument of documents) {
+    const card = aiDocumentCard(rawDocument);
+    if (card) list.append(card);
+  }
+  if (list.childElementCount) node.append(list);
+}
+
+function aiBubble(role, text, streaming = false, documents = []) {
   const node = document.createElement("div");
   node.className = `ai-msg ${role}${streaming ? " streaming" : ""}`;
-  node.textContent = text;
+  const copy = document.createElement("div");
+  copy.className = "ai-msg-copy";
+  copy.textContent = text;
+  node.append(copy);
+  aiAppendDocuments(node, documents);
   return node;
 }
 
@@ -214,7 +307,9 @@ async function aiShowChat(chatId) {
   try {
     const chat = await api("GET", `/api/ai/conversations/${chatId}`);
     ai.chatId = chat.id;
-    aiById("ai-messages").replaceChildren(...chat.messages.map((m) => aiBubble(m.role, m.content)));
+    aiById("ai-messages").replaceChildren(
+      ...chat.messages.map((m) => aiBubble(m.role, m.content, false, m.documents)),
+    );
     aiRenderProposalCards();
     aiHideError();
     aiRenderChatList();
@@ -465,7 +560,10 @@ async function aiSend() {
           state.lastHash = window.location.hash;
         }
       } else if (event.type === "delta") {
-        answer.textContent += event.text;
+        answer.querySelector(".ai-msg-copy").textContent += event.text;
+        aiScrollDown();
+      } else if (event.type === "documents") {
+        aiAppendDocuments(answer, event.documents);
         aiScrollDown();
       } else if (event.type === "error") {
         failure = event.message;

@@ -2,8 +2,8 @@
 
 ## Current release
 
-- Version: **0.7.0**
-- Stage: **In-context proposal review and approval**
+- Version: **0.8.0**
+- Stage: **Rich document objects in assistant chat**
 - Status: **released** (see `CHANGELOG.md`)
 - Modules: **Диск Yukiyasha**, **Память**, **Примавтодор**, **Предложения**, **Помощник**
 
@@ -25,7 +25,9 @@
 - Assistant chat renders proposal cards with old/new diff and in-context approve/reject controls.
 - Audit events for proposal creation and human resolution without proposal payload contents.
 - Long-term Memory with explicit remember/forget gating and credential-like content rejection.
-- Read-only AI tools for Примавтодор records, timesheet and settings.
+- Read-only AI tools for Примавтодор records, timesheet, settings and document metadata.
+- Assistant replies persist structured document refs and render them as rich mini-document cards.
+- Document previews are loaded locally in the browser; document contents are not sent to the AI provider just to render cards.
 - Persistent audit log under `system/audit/YYYY-MM-DD/*.json`.
 - Atomic disk writes, sandbox validation, request limits, security headers and same-origin checks.
 - Примавтодор linked records, seasonal fuel norms, timesheet, REST API and UI.

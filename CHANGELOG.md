@@ -2,6 +2,24 @@
 
 All notable changes to Yukiyasha are documented here.
 
+## [0.8.0] - 2026-10-07
+
+Documents found by Юкияша are now first-class visual objects in the conversation instead of raw
+file paths.
+
+### Added
+- Read-only document metadata tool for the five Примавтодор document sections.
+- Structured document refs persisted on assistant messages and emitted during streaming.
+- Rich mini-document cards with section, human-readable title, format, size and local preview.
+- One-click opening into the existing Yukiyasha file editor; the disk path stays hidden.
+- Pure `documents.js` presentation helpers with Node tests.
+
+### Privacy
+- Document contents are not sent to the AI provider merely to build the card or preview.
+- The provider receives document metadata from the list tool; text preview is fetched locally by
+  the browser through the existing protected Disk API.
+- Default persona instructs the assistant not to print raw document paths or turn them into links.
+
 ## [0.7.0] - 2026-10-07
 
 Proposal review is now available directly inside the assistant conversation.

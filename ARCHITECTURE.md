@@ -1,6 +1,6 @@
 # Yukiyasha Architecture
 
-## v0.7.0 — modular monolith with in-context proposal review
+## v0.8.0 — modular monolith with rich in-chat document objects
 
 ```text
 Browser -> Web/API -> Core Runtime -> Module Registry -> Modules
@@ -90,6 +90,18 @@ context. Applied/rejected/stale cards remain visible as recent history without a
 The review UI is presentation-only: it calls the existing human-facing proposal API and does not
 grant the AI any new capability.
 
+## Document cards
+
+Document discovery is metadata-only for the provider. The assistant can list files in the five
+Примавтодор document sections, and the resulting document refs are persisted on the assistant
+message. The browser renders those refs as mini-document cards with title, section, format and
+size. Text preview is then fetched locally through the existing same-origin Disk API, so preview
+content is not disclosed to the AI provider merely for presentation.
+
+The stored path is an internal navigation locator only; it is not shown as a raw link. Opening a
+card routes into the existing Yukiyasha file editor.
+
 ## Next architecture step
 
-Extend the same proposal model to timesheet marks and selected document operations.
+Extend the proposal model to timesheet marks and selected document create/update operations, while
+reusing these document cards as the review surface.

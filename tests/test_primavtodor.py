@@ -206,3 +206,34 @@ def test_disk_validation_still_applies_to_document_names(tmp_path: Path) -> None
         module.write_document("orders", "bad:name.md", "x")
     with pytest.raises(DiskPathError):
         module.write_document("orders", "CON.txt", "x")
+
+
+
+def test_document_summaries_and_preview_are_limited_to_document_sections(tmp_path: Path) -> None:
+    _, module = started(tmp_path)
+    content = "Служебная записка\nПрошу выделить автомобиль для выезда.\nСрок: сегодня."
+    module.write_document("memos", "записка-12.md", content)
+
+    summaries = module.document_summaries("memos")
+    preview = module.document_preview("memos", "записка-12.md", max_chars=40)
+
+    assert summaries == [
+        {
+            "section_id": "memos",
+            "section_title": "Служебные записки",
+            "name": "записка-12.md",
+            "path": "projects/work/Примавтодор/Служебные записки/записка-12.md",
+            "size": len(content.encode("utf-8")),
+            "extension": "md",
+        }
+    ]
+    assert preview["section_id"] == "memos"
+    assert preview["section_title"] == "Служебные записки"
+    assert preview["name"] == "записка-12.md"
+    assert preview["preview"].startswith("Служебная записка Прошу")
+    assert preview["truncated"] is True
+
+    with pytest.raises(UnknownSectionError):
+        module.document_summaries("fuel")
+    with pytest.raises(UnknownSectionError):
+        module.document_preview("waybills", "anything.txt")

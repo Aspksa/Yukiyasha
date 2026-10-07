@@ -303,7 +303,7 @@ def test_default_persona_is_the_character_and_an_old_default_is_upgraded(tmp_pat
         settings = settings_for(provider, assistant_name="Юкияша")
         module = make_module(tmp_path, settings)
         persona = module.persona()
-        assert "Господин" in persona and "НЕ видишь данные программы" in persona
+        assert "Господин" in persona and "read-only инструменты Примавтодора" in persona
 
         module.set_persona(OLD_DEFAULT_PERSONA.format(name="Юкияша"))
         module.stop()

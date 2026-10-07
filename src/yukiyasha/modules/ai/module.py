@@ -76,6 +76,41 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+def _document_refs(tool_name: str, content: str) -> list[dict[str, object]]:
+    if tool_name not in {"primavtodor_list_documents", "primavtodor_read_document"}:
+        return []
+    try:
+        payload = json.loads(content)
+    except ValueError:
+        return []
+    raw_items = payload.get("documents", []) if isinstance(payload, dict) else []
+    if tool_name == "primavtodor_read_document" and isinstance(payload, dict):
+        raw_items = [payload]
+    if not isinstance(raw_items, list):
+        return []
+    refs: list[dict[str, object]] = []
+    for item in raw_items[:10]:
+        if not isinstance(item, dict) or not item.get("path") or not item.get("name"):
+            continue
+        refs.append(
+            {
+                key: item[key]
+                for key in (
+                    "section_id",
+                    "section_title",
+                    "name",
+                    "path",
+                    "size",
+                    "extension",
+                    "preview",
+                    "truncated",
+                )
+                if key in item
+            }
+        )
+    return refs
+
+
 class ChatTurn:
     """One question being answered. Iterate :meth:`events`; always release afterwards."""
 
@@ -87,6 +122,7 @@ class ChatTurn:
         stream: Iterator[str],
         slot: threading.BoundedSemaphore,
         example_ids: list[str] | None = None,
+        documents: list[dict[str, object]] | None = None,
     ) -> None:
         self.conversation_id = str(chat["id"])
         self._module = module
@@ -95,6 +131,7 @@ class ChatTurn:
         self._stream = stream
         self._slot = slot
         self._example_ids = example_ids or []
+        self._documents = documents or []
         self._released = False
 
     def events(self) -> Iterator[dict[str, object]]:
@@ -107,7 +144,15 @@ class ChatTurn:
             answer = "".join(parts).strip()
             if not answer:
                 raise MessageRejectedError("Провайдер вернул пустой ответ")
-            self._module._save_turn(self._chat, self._user_text, answer, self._example_ids)
+            self._module._save_turn(
+                self._chat,
+                self._user_text,
+                answer,
+                self._example_ids,
+                self._documents,
+            )
+            if self._documents:
+                yield {"type": "documents", "documents": self._documents}
             yield {"type": "done", "conversation_id": self.conversation_id}
         finally:
             self.release()
@@ -260,7 +305,12 @@ class AiModule:
         self._disk.delete(self._chat_path(chat_id))
 
     def _save_turn(
-        self, chat: dict[str, object], user_text: str, answer: str, example_ids: list[str]
+        self,
+        chat: dict[str, object],
+        user_text: str,
+        answer: str,
+        example_ids: list[str],
+        documents: list[dict[str, object]] | None = None,
     ) -> None:
         now = _now()
         messages = chat.setdefault("messages", [])
@@ -269,6 +319,8 @@ class AiModule:
         reply: dict[str, object] = {"role": "assistant", "content": answer, "at": now}
         if example_ids:
             reply["examples"] = example_ids
+        if documents:
+            reply["documents"] = documents
         messages.append(reply)
         if not chat.get("title"):
             chat["title"] = " ".join(user_text.split())[:TITLE_CHARS]
@@ -305,30 +357,38 @@ class AiModule:
 
     def _add_tool_results(
         self, provider: ChatProvider, context: list[Message], user_text: str
-    ) -> list[Message]:
+    ) -> tuple[list[Message], list[dict[str, object]]]:
         if not self._tools or not self._tools.might_need_tools(user_text):
-            return context
+            return context, []
         planner = getattr(provider, "plan_tools", None)
         if not callable(planner):
-            return context
+            return context, []
         plan = planner(context, self._tools.definitions(user_text))
         if plan is None:
-            return context
+            return context, []
         enriched = [*context, plan.message]
+        documents: list[dict[str, object]] = []
+        seen_paths: set[str] = set()
         for call in plan.calls:
+            content = self._tools.execute(
+                call.name,
+                call.arguments,
+                user_text,
+            )
             enriched.append(
                 {
                     "role": "tool",
                     "tool_call_id": call.id,
                     "name": call.name,
-                    "content": self._tools.execute(
-                        call.name,
-                        call.arguments,
-                        user_text,
-                    ),
+                    "content": content,
                 }
             )
-        return enriched
+            for document in _document_refs(call.name, content):
+                path = str(document.get("path", ""))
+                if path and path not in seen_paths:
+                    seen_paths.add(path)
+                    documents.append(document)
+        return enriched, documents
 
     def begin_chat(self, chat_id: str | None, message: str) -> ChatTurn:
         text = message.strip()
@@ -359,9 +419,17 @@ class AiModule:
                 self.persona(), history if isinstance(history, list) else [], text
             )
             provider = self._provider or OpenAICompatibleProvider(self.settings)
-            context = self._add_tool_results(provider, context, text)
+            context, documents = self._add_tool_results(provider, context, text)
             stream = provider.open(context)
         except BaseException:
             self._slots.release()
             raise
-        return ChatTurn(self, chat, text, stream, self._slots, example_ids)
+        return ChatTurn(
+            self,
+            chat,
+            text,
+            stream,
+            self._slots,
+            example_ids,
+            documents,
+        )

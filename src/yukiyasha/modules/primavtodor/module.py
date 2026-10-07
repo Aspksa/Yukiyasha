@@ -11,6 +11,7 @@ from datetime import date
 from yukiyasha.modules.disk import DiskModule
 from yukiyasha.modules.manifest import ModuleManifest
 from yukiyasha.modules.primavtodor import calendar_ru
+from yukiyasha.modules.primavtodor.bookings import Bookings
 from yukiyasha.modules.primavtodor.calculations import vehicle_calculations
 from yukiyasha.modules.primavtodor.errors import (
     InvalidDocumentNameError,
@@ -69,6 +70,7 @@ class PrimavtodorModule:
         self.settings = ModuleSettings(disk)
         self.data = Records(disk, self.settings)  # employees, vehicles, waybills, fuel
         self.timesheet = Timesheet(disk, self.data)
+        self.bookings = Bookings(disk, self.data)
         self._state = ModuleState.REGISTERED
         self._last_error: str | None = None
 

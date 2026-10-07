@@ -803,6 +803,7 @@ async function loadModule() {
     renderModuleSections(sections);
     pvWire(); // the module page has its own buttons (closing the month)
     pvRenderSeasonSwitch();
+    void schLoad();
   } catch (error) {
     if (isAbort(error)) return;
     showModuleError(describeError(error));

@@ -5,6 +5,13 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- **График машин** at the top of the Примавтодор page: a car × day grid showing who has which
+  car and for how long. A booking is a driver, a car, *с … по …* and a type (business trip, car
+  taken for the whole day, or repair/service); there is no "who asked" field. Drag over free days
+  to book, click a bar to edit or delete, a strip shows who is away now and who leaves this week,
+  weekends and holidays come from the production calendar, overlaps on a car or a driver are
+  outlined in red (never forbidden), and the booking dialog lists the cars that are free on the
+  chosen dates. API: `/api/primavtodor/bookings`.
 - **Cars and cards move between drivers, the history is kept in the employee.** Change a
   driver's car or fuel card at any time (today the Hino, tomorrow the Lexus; a lost card is
   detached and another attached) with an optional *Смена … действует с* date; the employee shows

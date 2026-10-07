@@ -514,6 +514,40 @@ def create_app(
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
         )
 
+    @application.get("/api/primavtodor/bookings")
+    def primavtodor_bookings(
+        start: Annotated[date | None, Query()] = None,
+        days: Annotated[int, Query(ge=1, le=62)] = 14,
+    ) -> dict[str, object]:
+        """Grid cars × days of the vehicle schedule, who is away now and who leaves this week."""
+        today = date.today()
+        return primavtodor_call(
+            lambda: runtime.primavtodor.bookings.overview(start or today, days, today)
+        )
+
+    @application.get("/api/primavtodor/bookings/free")
+    def primavtodor_bookings_free(
+        start: Annotated[date, Query(alias="from")], end: Annotated[date, Query(alias="to")]
+    ) -> dict[str, object]:
+        return {
+            "vehicles": primavtodor_call(lambda: runtime.primavtodor.bookings.free(start, end))
+        }
+
+    @application.post("/api/primavtodor/bookings", status_code=201)
+    def primavtodor_booking_create(payload: Annotated[dict[str, Any], Body()]) -> dict[str, object]:
+        return primavtodor_call(lambda: runtime.primavtodor.bookings.create(payload))
+
+    @application.put("/api/primavtodor/bookings/{record_id}")
+    def primavtodor_booking_update(
+        record_id: str, payload: Annotated[dict[str, Any], Body()]
+    ) -> dict[str, object]:
+        return primavtodor_call(lambda: runtime.primavtodor.bookings.update(record_id, payload))
+
+    @application.delete("/api/primavtodor/bookings/{record_id}")
+    def primavtodor_booking_delete(record_id: str) -> dict[str, str]:
+        primavtodor_call(lambda: runtime.primavtodor.bookings.delete(record_id))
+        return {"status": "ok", "id": record_id}
+
     @application.get("/api/primavtodor/records/{kind}")
     def primavtodor_list(kind: str) -> dict[str, object]:
         return primavtodor_call(lambda: runtime.primavtodor.data.list_records(kind))

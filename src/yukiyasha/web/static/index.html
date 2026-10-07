@@ -177,6 +177,27 @@
           </div>
         </header>
         <p class="module-lead">Каждый раздел — папка на Диске Yukiyasha. Откройте раздел, чтобы создавать и редактировать документы.</p>
+        <section class="schedule" id="schedule" aria-label="График машин">
+          <header class="sch-head">
+            <div class="sch-title">
+              <h2>График машин</h2>
+              <p id="sch-range" class="sch-range"></p>
+            </div>
+            <div class="sch-tools">
+              <div class="sch-seg sch-span" role="group" aria-label="Период">
+                <button type="button" data-days="14">2 недели</button>
+                <button type="button" data-days="31">Месяц</button>
+              </div>
+              <button class="icon-btn" id="sch-prev" type="button" aria-label="Раньше"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></button>
+              <button class="btn" id="sch-today" type="button">Сегодня</button>
+              <button class="icon-btn" id="sch-next" type="button" aria-label="Позже"><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+              <button class="btn btn-primary" id="sch-new" type="button">Записать выезд</button>
+            </div>
+          </header>
+          <div class="sch-now" id="sch-now" aria-live="polite"></div>
+          <div class="sch-scroll"><div class="sch-grid" id="sch-grid"></div></div>
+          <p class="sch-hint">Протяните мышью по свободным дням машины — откроется запись. Нажмите на полосу, чтобы изменить или удалить.</p>
+        </section>
         <div id="module-groups" aria-live="polite"></div>
       </section>
 
@@ -414,6 +435,29 @@
     </form>
   </dialog>
 
+  <dialog id="dlg-booking" aria-labelledby="dlg-booking-title">
+    <form method="dialog" id="form-booking" novalidate>
+      <h2 id="dlg-booking-title">Выезд машины</h2>
+      <div class="sch-kinds" id="bk-kinds" role="radiogroup" aria-label="Тип"></div>
+      <div class="form-grid">
+        <div class="field"><label for="bk-driver">Водитель</label><select id="bk-driver"></select><span class="field-error" data-err="driver_id"></span></div>
+        <div class="field"><label for="bk-vehicle">Машина</label><select id="bk-vehicle"></select><span class="field-error" data-err="vehicle_id"></span></div>
+        <div class="field"><label for="bk-from">С</label><input type="date" id="bk-from"><span class="field-error" data-err="date_from"></span></div>
+        <div class="field"><label for="bk-to">По (включительно)</label><input type="date" id="bk-to"><span class="field-error" data-err="date_to"></span></div>
+      </div>
+      <div class="field"><label for="bk-note">Куда / заметка</label><input type="text" id="bk-note" maxlength="200" placeholder="Например: Находка"></div>
+      <div class="sch-free" id="bk-free"></div>
+      <div class="warn-list" id="bk-warn" hidden></div>
+      <p class="dlg-error" id="bk-error" role="alert" hidden></p>
+      <div class="dlg-actions dlg-actions-split">
+        <button class="btn btn-ghost-danger" type="button" id="bk-delete" hidden>Удалить</button>
+        <span class="spacer"></span>
+        <button class="btn" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit" id="bk-save">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="dlg-report" aria-labelledby="dlg-report-title">
     <form method="dialog" id="form-report" novalidate>
       <h2 id="dlg-report-title">Анализ расхода ГСМ</h2>
@@ -510,6 +554,7 @@
 
   <script src="/static/util.js" defer></script>
   <script src="/static/primavtodor.js" defer></script>
+  <script src="/static/schedule.js" defer></script>
   <script src="/static/proposals.js" defer></script>
   <script src="/static/documents.js" defer></script>
   <script src="/static/ai.js" defer></script>

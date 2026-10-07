@@ -11,6 +11,11 @@ All notable changes to Yukiyasha are documented here.
   in a quick line («7.13») is not read as January.
 
 ### Added
+- **The assistant knows the schedule.** New read tools: the summary for today, the schedule with
+  who is free on a day (leave and sick days from the timesheet included) and a reader of one
+  typed line («Веровский 7-9 командировка»). Booking, moving or removing a trip goes through the
+  usual proposal: the assistant only proposes, the person approves; the proposal text reads
+  «Веровский И. · С303СС · 07.10.2026 – 09.10.2026 · Командировка».
 - **График машин, second pass:** bookings can be dragged to other days or another car and
   stretched by their edges (a conflict is flagged, never refused); gradient bars with the driver's
   initials, a «сегодня» marker and a highlighted today column, week separators, a sticky header,

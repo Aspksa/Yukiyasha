@@ -1,6 +1,9 @@
 """Permission-checked capability views of the Примавтодор module."""
 
+from datetime import date
+
 from yukiyasha.modules.permissions import PermissionBroker
+from yukiyasha.modules.primavtodor.bookings import KIND_BOOKINGS
 from yukiyasha.modules.primavtodor.module import PrimavtodorModule
 from yukiyasha.modules.registry import ModuleState
 
@@ -46,6 +49,24 @@ class PrimavtodorReadAccess(_PrimavtodorAccess):
         self._check("primavtodor.read")
         return self._module.document_summaries(section_id, limit=limit)
 
+    def briefing(self) -> dict[str, object]:
+        self._check("primavtodor.read")
+        return self._module.briefing()
+
+    def schedule(self, day: date | None, days: int) -> dict[str, object]:
+        """The vehicle schedule from ``day`` for ``days`` days, with who is free that day."""
+        self._check("primavtodor.read")
+        today = date.today()
+        return self._module.bookings.overview(day or today, days, today, day)
+
+    def parse_booking(self, text: str) -> dict[str, object]:
+        self._check("primavtodor.read")
+        return self._module.bookings.parse(text, date.today())
+
+    def describe_booking(self, values: dict[str, object]) -> str:
+        self._check("primavtodor.read")
+        return self._module.bookings.describe(values)
+
     def read_document(self, section_id: str, name: str) -> dict[str, object]:
         self._check("primavtodor.read")
         return self._module.document_preview(section_id, name)
@@ -62,22 +83,33 @@ class PrimavtodorWriteAccess(_PrimavtodorAccess):
         record_id: str | None = None,
     ) -> dict[str, object]:
         self._check("primavtodor.write")
+        if kind == KIND_BOOKINGS:
+            return self._module.bookings.validate(payload)
         return self._module.data.validate(kind, payload, record_id=record_id)
 
     def get_record(self, kind: str, record_id: str) -> dict[str, object]:
         self._check("primavtodor.read")
+        if kind == KIND_BOOKINGS:
+            return self._module.bookings.record(record_id)
         return self._module.data.get(kind, record_id)
 
     def create(self, kind: str, payload: dict[str, object]) -> dict[str, object]:
         self._check("primavtodor.write")
+        if kind == KIND_BOOKINGS:
+            return self._module.bookings.create(payload)
         return self._module.data.create(kind, payload)
 
     def update(
         self, kind: str, record_id: str, payload: dict[str, object]
     ) -> dict[str, object]:
         self._check("primavtodor.write")
+        if kind == KIND_BOOKINGS:
+            return self._module.bookings.update(record_id, payload)
         return self._module.data.update(kind, record_id, payload)
 
     def delete(self, kind: str, record_id: str) -> None:
         self._check("primavtodor.delete")
+        if kind == KIND_BOOKINGS:
+            self._module.bookings.delete(record_id)
+            return
         self._module.data.delete(kind, record_id)

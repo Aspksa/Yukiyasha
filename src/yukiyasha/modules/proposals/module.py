@@ -23,7 +23,7 @@ from yukiyasha.version import get_version
 PROPOSALS_DIR = "proposals/items"
 PROPOSAL_ID_RE = re.compile(r"^prop-[0-9a-f]{12}$")
 OPERATIONS = {"create", "update", "delete"}
-KINDS = {"waybills", "fuel", "employees", "vehicles"}
+KINDS = {"waybills", "fuel", "employees", "vehicles", "bookings"}
 
 PROPOSALS_MANIFEST = ModuleManifest(
     module_id="proposals",

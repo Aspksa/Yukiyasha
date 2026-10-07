@@ -2,14 +2,32 @@
 
 All notable changes to Yukiyasha are documented here.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-07
+
+Permissions, audited read-only Примавтодор tools for the assistant, and the Yukiyasha character.
 
 ### Added
-- The assistant now speaks as **Юкияша** by default: a bundled character pack (persona, honesty
-  rules and 400 example replies in 20 categories). A few replies that fit the message are shown to
-  the model as a tone sample (never sent as-is, never repeated within the last 30 answers, none for
-  messages about real danger). A persona file still equal to the 0.3.0 default is upgraded on
-  start; an edited persona is left alone.
+- Runtime-owned `PermissionBroker` with default-deny module capability checks.
+- Path-scoped `DiskAccess` views: Примавтодор is confined to its project tree; AI to `ai/**`.
+- Explicit `primavtodor.read` capability and a read-only facade for records, timesheet and settings.
+- Four assistant tools: list/get records, timesheet and settings; no write/delete tools.
+- Sensitive-field masking before tool results leave Yukiyasha.
+- Persistent audit events under `system/audit/YYYY-MM-DD/*.json`; business payloads and API keys
+  are not copied into the audit record.
+- Standard OpenAI-compatible tool planning with fallback to ordinary chat for providers that reject
+  the standard `tools` request.
+- The assistant now speaks as **Юкияша** by default using the bundled character pack and tone
+  examples; an untouched older default persona is upgraded automatically.
+
+### Security
+- Module-to-module data access is permission-checked and path-scoped.
+- AI business access is read-only and fail-closed: disclosure requires a successful audit write.
+- Phone numbers, personnel numbers and fuel-card/card values are masked before provider transfer.
+- Tool calls are capped per turn and arguments are validated against a small allow-list.
+
+### Changed
+- The default persona now accurately states that read-only Примавтодор tools are available.
+- Project documentation now describes the capability boundary, masking and audit model.
 
 ## [0.3.0] - 2026-10-07
 

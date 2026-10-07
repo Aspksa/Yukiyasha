@@ -77,15 +77,13 @@ def _now() -> str:
 
 
 def _document_refs(tool_name: str, content: str) -> list[dict[str, object]]:
-    if tool_name not in {"primavtodor_list_documents", "primavtodor_read_document"}:
+    if tool_name != "primavtodor_list_documents":
         return []
     try:
         payload = json.loads(content)
     except ValueError:
         return []
     raw_items = payload.get("documents", []) if isinstance(payload, dict) else []
-    if tool_name == "primavtodor_read_document" and isinstance(payload, dict):
-        raw_items = [payload]
     if not isinstance(raw_items, list):
         return []
     refs: list[dict[str, object]] = []

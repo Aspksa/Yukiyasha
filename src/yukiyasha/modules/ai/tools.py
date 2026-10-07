@@ -19,9 +19,14 @@ SENSITIVE_KEYS = {
     "card_number",
     "driver_card",
 }
+DOCUMENT_TRIGGER = re.compile(
+    r"документ|договор|сч[её]т|оферт|служебн|записк|приказ|распоряж",
+    re.IGNORECASE,
+)
 BUSINESS_TRIGGER = re.compile(
     r"примавтодор|путев|водител|сотрудник|машин|автомоб|гараж|гсм|топлив|заправ|"
-    r"табел|пробег|расход|норм[аы]|одометр",
+    r"табел|пробег|расход|норм[аы]|одометр|документ|договор|сч[её]т|оферт|служебн|"
+    r"записк|приказ|распоряж",
     re.IGNORECASE,
 )
 MEMORY_TRIGGER = re.compile(
@@ -43,6 +48,7 @@ MUTATION_TRIGGER = re.compile(
     re.IGNORECASE,
 )
 KINDS = ("waybills", "fuel", "employees", "vehicles")
+DOCUMENT_SECTIONS = ("contracts", "invoice_offer", "memos", "orders", "directives")
 MAX_LIST_ITEMS = 20
 MAX_TIMESHEET_ROWS = 20
 MAX_MEMORY_RESULTS = 8
@@ -78,6 +84,8 @@ class AiToolRegistry:
             "primavtodor_get_record": self._get_record,
             "primavtodor_timesheet": self._timesheet,
             "primavtodor_settings": self._settings,
+            "primavtodor_list_documents": self._list_documents,
+            "primavtodor_read_document": self._read_document,
         }
         if proposals is not None:
             self._handlers["primavtodor_propose_change"] = self._propose_change
@@ -101,6 +109,8 @@ class AiToolRegistry:
         definitions: list[dict[str, object]] = []
         if BUSINESS_TRIGGER.search(message):
             definitions.extend(self._business_definitions())
+            if DOCUMENT_TRIGGER.search(message):
+                definitions.extend(self._document_definitions())
             if self._proposals is not None and MUTATION_TRIGGER.search(message):
                 definitions.append(self._proposal_definition())
         if self._memory is not None and MEMORY_TRIGGER.search(message):
@@ -242,6 +252,47 @@ class AiToolRegistry:
                     "parameters": {
                         "type": "object",
                         "properties": {},
+                        "additionalProperties": False,
+                    },
+                },
+            },
+        ]
+
+    def _document_definitions(self) -> list[dict[str, object]]:
+        section_schema = {"type": "string", "enum": list(DOCUMENT_SECTIONS)}
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "primavtodor_list_documents",
+                    "description": (
+                        "Показать документы выбранного раздела Примавтодора. Только чтение."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "section_id": section_schema,
+                            "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                        },
+                        "required": ["section_id"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "primavtodor_read_document",
+                    "description": (
+                        "Прочитать текстовый документ Примавтодора и получить превью для ответа."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "section_id": section_schema,
+                            "name": {"type": "string"},
+                        },
+                        "required": ["section_id", "name"],
                         "additionalProperties": False,
                     },
                 },
@@ -392,6 +443,23 @@ class AiToolRegistry:
     def _settings(self, arguments: dict[str, object]) -> dict[str, object]:
         del arguments
         return self._primavtodor.settings()
+
+    def _list_documents(self, arguments: dict[str, object]) -> dict[str, object]:
+        section_id = str(arguments.get("section_id", ""))
+        if section_id not in DOCUMENT_SECTIONS:
+            raise ValueError("Неизвестный раздел документов")
+        limit = max(1, min(int(arguments.get("limit", 10)), 20))
+        documents = self._primavtodor.list_documents(section_id, limit=limit)
+        return {"section_id": section_id, "documents": documents}
+
+    def _read_document(self, arguments: dict[str, object]) -> dict[str, object]:
+        section_id = str(arguments.get("section_id", ""))
+        if section_id not in DOCUMENT_SECTIONS:
+            raise ValueError("Неизвестный раздел документов")
+        name = str(arguments.get("name", "")).strip()
+        if not name:
+            raise ValueError("Не указано имя документа")
+        return self._primavtodor.read_document(section_id, name)
 
     def _propose_change(self, arguments: dict[str, object]) -> dict[str, object]:
         assert self._proposals is not None

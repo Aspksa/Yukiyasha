@@ -17,6 +17,7 @@ from yukiyasha.modules.ai.errors import (
 from yukiyasha.modules.ai.persona_pack import (
     LEGACY_PROGRAM_RULES,
     RECENT_WINDOW,
+    V04_PROGRAM_RULES,
     format_examples,
     persona_text,
     pick_examples,
@@ -152,7 +153,11 @@ class AiModule:
                 self.settings.assistant_name,
                 program_rules=LEGACY_PROGRAM_RULES,
             )
-            if current in {old_plain, old_character}:
+            v04_character = persona_text(
+                self.settings.assistant_name,
+                program_rules=V04_PROGRAM_RULES,
+            )
+            if current in {old_plain, old_character, v04_character}:
                 self._disk.write_text(PERSONA_PATH, default, overwrite=True)
         self._last_error = None
         self._state = ModuleState.READY

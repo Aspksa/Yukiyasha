@@ -1,6 +1,6 @@
 # Yukiyasha Architecture
 
-## v0.2.1 hardened module foundation
+## Module foundation (v0.3.0)
 
 Yukiyasha is a modular monolith with explicit runtime, module and transport boundaries.
 
@@ -124,7 +124,7 @@ Security and consistency invariants:
 - deleting the disk root is forbidden;
 - permission, conflict, invalid-path and size failures are represented explicitly.
 
-Declared permissions remain metadata in v0.2.1:
+Declared permissions remain metadata in v0.3.0:
 - `disk.read`
 - `disk.write`
 - `disk.delete`

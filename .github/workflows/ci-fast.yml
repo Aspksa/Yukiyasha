@@ -3,9 +3,6 @@ name: Fast CI
 on:
   pull_request:
     branches: ["main"]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
   workflow_dispatch:
 
 concurrency:
@@ -63,3 +60,21 @@ jobs:
       - name: Launcher diagnostics
         shell: cmd
         run: Yukiyasha.bat --check
+
+  gate:
+    name: PR Gate
+    if: always()
+    needs: [quality, windows-launcher]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Verify required checks
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          WINDOWS_RESULT: ${{ needs.windows-launcher.result }}
+        run: |
+          echo "Fast quality: $QUALITY_RESULT"
+          echo "Windows launcher: $WINDOWS_RESULT"
+          test "$QUALITY_RESULT" = "success"
+          test "$WINDOWS_RESULT" = "success"

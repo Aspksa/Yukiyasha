@@ -1,5 +1,6 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
+for /f "tokens=2 delims=: " %%C in ('chcp') do set "ORIGINAL_CODEPAGE=%%C"
 chcp 65001 >nul
 title Yukiyasha — launcher
 
@@ -14,6 +15,7 @@ set "MAX_PORT=8010"
 set "CHECK_ONLY=0"
 set "FIXED_PORT=0"
 set "ALREADY_RUNNING=0"
+set "INSTALL_ATTEMPTED=0"
 
 set "PORT=%YUKIYASHA_PORT%"
 if defined PORT set "FIXED_PORT=1"
@@ -57,6 +59,7 @@ if "%CHECK_ONLY%"=="1" (
     ) else (
         echo [OK] Для запуска доступен порт %PORT%.
     )
+    call :restore_console
     exit /b 0
 )
 
@@ -67,6 +70,7 @@ if "%ALREADY_RUNNING%"=="1" (
     echo.
     echo [Yukiyasha] Уже запущена: %APP_URL%
     if /I not "%YUKIYASHA_NO_BROWSER%"=="1" start "" "%APP_URL%"
+    call :restore_console
     exit /b 0
 )
 
@@ -79,7 +83,6 @@ echo Для остановки нажмите Ctrl+C или закройте э�
 echo.
 
 if /I not "%YUKIYASHA_NO_BROWSER%"=="1" (
-    rem Браузер откроется только после появления health endpoint.
     start "" powershell -NoProfile -WindowStyle Hidden -Command ^
       "$url='%APP_URL%'; $health='%HEALTH_URL%';" ^
       "for($i=0;$i -lt 30;$i++){" ^
@@ -99,6 +102,7 @@ if "%EXIT_CODE%"=="0" (
     echo Проверьте сообщение выше.
     pause
 )
+call :restore_console
 exit /b %EXIT_CODE%
 
 :check_python
@@ -136,7 +140,6 @@ if exist "%PYTHON_EXE%" (
     echo [OK] .venv найден.
     exit /b 0
 )
-
 echo [Yukiyasha] Создаю локальную среду .venv...
 %PY_LAUNCHER% -m venv "%VENV_DIR%"
 if errorlevel 1 (
@@ -172,6 +175,12 @@ if exist "%DEPS_MARKER%" set /p SAVED_DEPS_HASH=<"%DEPS_MARKER%"
 if /I "%SAVED_DEPS_HASH%"=="%CURRENT_DEPS_HASH%" goto :verify_dependencies
 
 :install_dependencies
+if "%INSTALL_ATTEMPTED%"=="1" (
+    echo [ОШИБКА] Зависимости не проходят проверку после установки.
+    echo Удалите папку .venv и запустите Yukiyasha.bat снова.
+    exit /b 1
+)
+set "INSTALL_ATTEMPTED=1"
 echo [Yukiyasha] Конфигурация зависимостей изменилась. Обновляю среду...
 "%PYTHON_EXE%" -m pip install -e .
 if errorlevel 1 (
@@ -197,13 +206,12 @@ exit /b 0
 
 :select_port
 echo [5/5] Проверка порта...
-
 set "PORT_CANDIDATE=%PORT%"
 powershell -NoProfile -Command ^
   "$v=$env:PORT_CANDIDATE; $p=0;" ^
-  "if(($v -match '^\d{1,5}$') -and [int]::TryParse($v,[ref]$p) -and $p -ge 1 -and $p -le 65535){exit 0}else{exit 1}" >nul 2>&1
+  "if(($v -match '^[1-9]\d{0,4}$') -and [int]::TryParse($v,[ref]$p) -and $p -le 65535){exit 0}else{exit 1}" >nul 2>&1
 if errorlevel 1 (
-    echo [ОШИБКА] Некорректный порт: %PORT%
+    echo [ОШИБКА] Некорректный порт: "%PORT%"
     exit /b 1
 )
 
@@ -211,7 +219,12 @@ set /a CURRENT_PORT=%PORT%
 
 :port_loop
 call :is_port_busy %CURRENT_PORT%
-if errorlevel 1 (
+set "PORT_CHECK_RC=%ERRORLEVEL%"
+if %PORT_CHECK_RC% GEQ 2 (
+    echo [ОШИБКА] Не удалось проверить состояние порта %CURRENT_PORT%.
+    exit /b 1
+)
+if "%PORT_CHECK_RC%"=="1" (
     set "PORT=%CURRENT_PORT%"
     echo [OK] Порт %CURRENT_PORT% свободен.
     exit /b 0
@@ -226,7 +239,6 @@ if not errorlevel 1 (
 )
 
 echo [Yukiyasha] Порт %CURRENT_PORT% занят другим процессом.
-
 if "%FIXED_PORT%"=="1" (
     echo [ОШИБКА] Выбранный фиксированный порт недоступен.
     exit /b 1
@@ -244,10 +256,17 @@ goto :port_loop
 :is_port_busy
 set "CHECK_PORT=%~1"
 powershell -NoProfile -Command ^
-  "$p=%CHECK_PORT%; $busy=$false;" ^
-  "try{$busy=[bool](Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction Stop)}catch{" ^
-  "  $busy=[bool]((& netstat -ano -p tcp) -match (':'+$p+'\s+.*LISTENING'))" ^
-  "}; if($busy){exit 0}else{exit 1}" >nul 2>&1
+  "$p=%CHECK_PORT%;" ^
+  "try {" ^
+  "  try {" ^
+  "    $listeners=Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction Stop;" ^
+  "    if($listeners){exit 0}else{exit 1}" ^
+  "  } catch {" ^
+  "    $lines=& netstat -ano -p tcp 2>$null;" ^
+  "    if($LASTEXITCODE -ne 0){exit 2};" ^
+  "    if($lines -match (':'+$p+'\s+.*LISTENING')){exit 0}else{exit 1}" ^
+  "  }" ^
+  "} catch { exit 2 }" >nul 2>&1
 exit /b %ERRORLEVEL%
 
 :is_yukiyasha
@@ -259,10 +278,15 @@ powershell -NoProfile -Command ^
   "}catch{exit 1}" >nul 2>&1
 exit /b %ERRORLEVEL%
 
+:restore_console
+if defined ORIGINAL_CODEPAGE chcp %ORIGINAL_CODEPAGE% >nul 2>&1
+exit /b 0
+
 :fatal
 echo.
 echo Запуск Yukiyasha остановлен из-за ошибки.
 echo.
+call :restore_console
 if "%CHECK_ONLY%"=="1" exit /b 1
 pause
 exit /b 1

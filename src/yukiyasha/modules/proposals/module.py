@@ -167,6 +167,7 @@ class ProposalModule:
         body = dict(payload or {})
         base_fingerprint: str | None = None
         target_summary: dict[str, object] | None = None
+        before: dict[str, object] | None = None
 
         if operation == "create":
             if not body:
@@ -177,6 +178,8 @@ class ProposalModule:
             assert record_id is not None
             current = self._primavtodor.get_record(kind, record_id)
             base_fingerprint = _fingerprint(current)
+            current_values = current.get("values")
+            before = dict(current_values) if isinstance(current_values, dict) else {}
             target_summary = {
                 "id": current.get("id"),
                 "label": current.get("label"),
@@ -185,9 +188,8 @@ class ProposalModule:
             if operation == "update":
                 if not body:
                     raise ProposalValidationError("Для изменения нужны значения полей")
-                current_values = current.get("values")
                 merged = {
-                    **(current_values if isinstance(current_values, dict) else {}),
+                    **before,
                     **body,
                 }
                 body = self._primavtodor.validate(kind, merged, record_id=record_id)
@@ -202,6 +204,7 @@ class ProposalModule:
             "kind": kind,
             "record_id": record_id,
             "payload": body,
+            "before": before,
             "reason": " ".join(reason.split())[:500],
             "base_fingerprint": base_fingerprint,
             "target": target_summary,

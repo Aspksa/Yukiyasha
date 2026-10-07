@@ -39,7 +39,10 @@ jobs:
         run: python -m pytest -q
 
       - name: UI helper tests
-        run: node --test tests/js/util.test.js
+        run: |
+          node --check src/yukiyasha/web/static/ai.js
+          node --check src/yukiyasha/web/static/proposals.js
+          node --test tests/js/*.test.js
 
       - name: Build wheel and verify packaged UI
         run: |
@@ -48,7 +51,7 @@ jobs:
           import glob, zipfile
           names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
           assert len(names) == len(set(names)), "duplicate files in wheel"
-          for required in ("app.js", "util.js", "primavtodor.js", "ai.js", "index.html", "style.css"):
+          for required in ("app.js", "util.js", "primavtodor.js", "proposals.js", "ai.js", "index.html", "style.css"):
               assert f"yukiyasha/web/static/{required}" in names, required
           assert "yukiyasha/modules/ai/character/yukiyasha_pack.json" in names, "character pack"
           PY

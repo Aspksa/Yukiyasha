@@ -85,6 +85,8 @@ def test_partial_update_proposal_is_normalized_and_becomes_stale_after_change(
         reason="Исправить модель",
     )
 
+    assert proposal["before"]["plate"] == "А123АА25"
+    assert proposal["before"]["model"] == "УАЗ Патриот"
     assert proposal["payload"]["plate"] == "А123АА25"
     assert proposal["payload"]["model"] == "УАЗ Патриот обновлённый"
 

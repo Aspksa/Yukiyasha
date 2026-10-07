@@ -7,9 +7,12 @@
  * Everything that comes from the model or from files is rendered through textContent.
  */
 
+const proposalReview = YukiProposal;
+
 const ai = {
   status: null, // { configured, problem, provider, model, assistant_name, limits, ... }
   chats: [],
+  proposals: [],
   chatId: null,
   sending: false,
   wired: false,
@@ -27,7 +30,7 @@ const AI_SETUP_EXAMPLE = [
 
 async function openAi(chatId) {
   aiWire();
-  await Promise.all([aiLoadStatus(), aiLoadChats()]);
+  await Promise.all([aiLoadStatus(), aiLoadChats(), aiLoadProposals()]);
   if (chatId) {
     await aiShowChat(chatId);
   } else {
@@ -92,7 +95,9 @@ async function aiLoadStatus() {
     banner.hidden = true;
     aiById("ai-privacy").textContent =
       `Сообщения отправляются провайдеру ${status.provider} (модель ${status.model}). ` +
-      "Данные программы (путевые листы, сотрудники, документы) помощнику не передаются.";
+      "Для ответов по Примавтодору помощник может передавать провайдеру разрешённые " +
+      "read-only данные; чувствительные поля маскируются. Изменения применяются только " +
+      "после отдельного подтверждения предложения.";
   }
   aiSetInputEnabled(status.configured);
 }
@@ -189,6 +194,7 @@ function aiRenderHello() {
     "Напишите вопрос ниже. Личность и диалоги хранятся на вашем Диске, ответы даёт выбранная модель по вашему ключу.";
   hello.append(strong, text);
   messages.replaceChildren(hello);
+  aiRenderProposalCards();
   aiHideError();
 }
 
@@ -209,12 +215,171 @@ async function aiShowChat(chatId) {
     const chat = await api("GET", `/api/ai/conversations/${chatId}`);
     ai.chatId = chat.id;
     aiById("ai-messages").replaceChildren(...chat.messages.map((m) => aiBubble(m.role, m.content)));
+    aiRenderProposalCards();
     aiHideError();
     aiRenderChatList();
     aiScrollDown();
   } catch (error) {
     toast(describeError(error), "error");
     navigate({ ai: true });
+  }
+}
+
+async function aiLoadProposals() {
+  try {
+    ai.proposals = (await api("GET", "/api/proposals")).proposals ?? [];
+  } catch (error) {
+    ai.proposals = [];
+    toast(`Не удалось загрузить предложения: ${describeError(error)}`, "error");
+  }
+  aiRenderProposalCards();
+}
+
+function aiProposalStatusClass(status) {
+  return ["pending", "applied", "rejected", "stale"].includes(status)
+    ? status
+    : "unknown";
+}
+
+function aiProposalCard(proposal) {
+  const card = document.createElement("article");
+  card.className = `ai-proposal ${aiProposalStatusClass(proposal.status)}`;
+  card.dataset.proposalId = proposal.id;
+
+  const head = document.createElement("div");
+  head.className = "ai-proposal-head";
+  const title = document.createElement("div");
+  const eyebrow = document.createElement("span");
+  eyebrow.className = "ai-proposal-eyebrow";
+  eyebrow.textContent = `${proposalReview.operationLabel(proposal.operation)} · ${proposalReview.kindLabel(proposal.kind)}`;
+  const strong = document.createElement("strong");
+  strong.textContent = proposal.target?.label || proposal.record_id || proposal.id;
+  title.append(eyebrow, strong);
+
+  const status = document.createElement("span");
+  status.className = `ai-proposal-status ${aiProposalStatusClass(proposal.status)}`;
+  status.textContent = proposalReview.statusLabel(proposal.status);
+  head.append(title, status);
+  card.append(head);
+
+  if (proposal.reason) {
+    const reason = document.createElement("p");
+    reason.className = "ai-proposal-reason";
+    reason.textContent = proposal.reason;
+    card.append(reason);
+  }
+
+  const diff = proposalReview.buildProposalDiff(proposal);
+  if (diff.length) {
+    const table = document.createElement("div");
+    table.className = "ai-proposal-diff";
+    for (const change of diff) {
+      const row = document.createElement("div");
+      row.className = "ai-proposal-diff-row";
+
+      const field = document.createElement("span");
+      field.className = "ai-proposal-field";
+      field.textContent = proposalReview.fieldLabel(change.field);
+
+      const before = document.createElement("span");
+      before.className = "ai-proposal-before";
+      before.textContent = proposalReview.formatValue(change.before);
+
+      const arrow = document.createElement("span");
+      arrow.className = "ai-proposal-arrow";
+      arrow.setAttribute("aria-hidden", "true");
+      arrow.textContent = "→";
+
+      const after = document.createElement("span");
+      after.className = "ai-proposal-after";
+      after.textContent = proposalReview.formatValue(change.after);
+
+      row.append(field, before, arrow, after);
+      table.append(row);
+    }
+    card.append(table);
+  }
+
+  const meta = document.createElement("div");
+  meta.className = "ai-proposal-meta";
+  meta.textContent = `ID: ${proposal.id}`;
+  if (proposal.status === "stale" && proposal.result?.reason) {
+    meta.textContent += ` · конфликт: ${proposal.result.reason}`;
+  }
+  card.append(meta);
+
+  if (proposal.status === "pending") {
+    const actions = document.createElement("div");
+    actions.className = "ai-proposal-actions";
+
+    const reject = document.createElement("button");
+    reject.type = "button";
+    reject.className = "btn";
+    reject.textContent = "Отклонить";
+    reject.addEventListener("click", () => void aiResolveProposal(proposal, "reject"));
+
+    const approve = document.createElement("button");
+    approve.type = "button";
+    approve.className = "btn btn-primary";
+    approve.textContent = "Подтвердить";
+    approve.addEventListener("click", () => void aiResolveProposal(proposal, "approve"));
+
+    actions.append(reject, approve);
+    card.append(actions);
+  }
+
+  return card;
+}
+
+function aiRenderProposalCards() {
+  const messages = aiById("ai-messages");
+  if (!messages) return;
+  messages.querySelector("#ai-proposal-shelf")?.remove();
+
+  const visible = ai.proposals
+    .filter((item) => item?.status === "pending" || ["applied", "rejected", "stale"].includes(item?.status))
+    .slice(0, 6);
+  if (!visible.length) return;
+
+  const shelf = document.createElement("section");
+  shelf.id = "ai-proposal-shelf";
+  shelf.className = "ai-proposal-shelf";
+  shelf.setAttribute("aria-label", "Предложения изменений");
+
+  const heading = document.createElement("div");
+  heading.className = "ai-proposal-shelf-head";
+  const title = document.createElement("strong");
+  title.textContent = "Предложения изменений";
+  const note = document.createElement("span");
+  note.textContent = "Применяются только после вашего подтверждения";
+  heading.append(title, note);
+  shelf.append(heading, ...visible.map(aiProposalCard));
+  messages.append(shelf);
+}
+
+async function aiResolveProposal(proposal, action) {
+  const approving = action === "approve";
+  const confirmed = await askConfirm({
+    title: approving ? "Подтвердить изменение?" : "Отклонить предложение?",
+    text: approving
+      ? `Предложение ${proposal.id} будет применено к данным Примавтодора.`
+      : `Предложение ${proposal.id} будет окончательно отклонено.`,
+    okLabel: approving ? "Подтвердить" : "Отклонить",
+    danger: false,
+  });
+  if (!confirmed) return;
+
+  try {
+    await api("POST", `/api/proposals/${proposal.id}/${action}`);
+    toast(approving ? "Изменение применено" : "Предложение отклонено");
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409 && error.detail?.status === "stale") {
+      toast("Предложение устарело: исходная запись уже изменилась", "error");
+    } else {
+      toast(`Не удалось обработать предложение: ${describeError(error)}`, "error");
+    }
+  } finally {
+    await aiLoadProposals();
   }
 }
 
@@ -283,6 +448,7 @@ async function aiSend() {
 
   const messages = aiById("ai-messages");
   messages.querySelector(".ai-hello")?.remove();
+  messages.querySelector("#ai-proposal-shelf")?.remove();
   const userBubble = aiBubble("user", text);
   const answer = aiBubble("assistant", "", true);
   messages.append(userBubble, answer);
@@ -328,7 +494,7 @@ async function aiSend() {
     input.value = text;
   } else {
     input.value = "";
-    await aiLoadChats();
+    await Promise.all([aiLoadChats(), aiLoadProposals()]);
   }
   aiSetInputEnabled(Boolean(ai.status?.configured));
   input.focus();

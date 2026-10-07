@@ -2,8 +2,8 @@
 
 ## Current release
 
-- Version: **0.6.0**
-- Stage: **AI write proposals with human approval**
+- Version: **0.7.0**
+- Stage: **In-context proposal review and approval**
 - Status: **released** (see `CHANGELOG.md`)
 - Modules: **Диск Yukiyasha**, **Память**, **Примавтодор**, **Предложения**, **Помощник**
 
@@ -22,6 +22,7 @@
   - human API endpoints can approve or reject pending proposals;
   - there is no AI apply/approve/reject capability.
 - Proposal lifecycle statuses: `pending`, `applied`, `rejected`, `stale`.
+- Assistant chat renders proposal cards with old/new diff and in-context approve/reject controls.
 - Audit events for proposal creation and human resolution without proposal payload contents.
 - Long-term Memory with explicit remember/forget gating and credential-like content rejection.
 - Read-only AI tools for Примавтодор records, timesheet and settings.
@@ -51,7 +52,6 @@
 ## Known limitations
 
 - No authentication; Yukiyasha remains a loopback-only local application.
-- Proposal approval currently has API support but no dedicated browser review page.
 - Proposals cover structured records only; document files and timesheet marks are not proposal-enabled.
 - `ai.provider` is declared but provider-network access is not wrapped as its own capability.
 - Audit retention/rotation and an audit viewer UI are not implemented.
@@ -61,6 +61,5 @@
 
 ## Exact next_action
 
-Add a **proposal review surface inside the assistant/workspace** without turning navigation into
-action buttons: show pending proposal details, diff, stale state, and approve/reject controls only
-inside the proposal context.
+Extend proposal coverage to **timesheet marks and selected document operations**, reusing the same
+review-card and stale/approval model instead of introducing direct AI writes.

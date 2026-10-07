@@ -186,7 +186,12 @@ class ProposalModule:
             if operation == "update":
                 if not body:
                     raise ProposalValidationError("Для изменения нужны значения полей")
-                body = self._primavtodor.validate(kind, body, record_id=record_id)
+                current_values = current.get("values")
+                merged = {
+                    **(current_values if isinstance(current_values, dict) else {}),
+                    **body,
+                }
+                body = self._primavtodor.validate(kind, merged, record_id=record_id)
             elif body:
                 raise ProposalValidationError("Удаление не принимает значения полей")
 

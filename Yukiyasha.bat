@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-for /f "tokens=2 delims=: " %%C in ('chcp') do set "ORIGINAL_CODEPAGE=%%C"
+for /f "tokens=2 delims=:" %%C in ('chcp') do set "ORIGINAL_CODEPAGE=%%C"
 chcp 65001 >nul
 title Yukiyasha — launcher
 

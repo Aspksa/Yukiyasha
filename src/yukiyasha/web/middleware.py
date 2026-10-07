@@ -43,7 +43,7 @@ class RequestBodyLimitMiddleware:
 
             total += len(message.get("body", b""))
             if total > self.max_bytes:
-                await self._reject(send)
+                await self._reject(scope, receive, send)
                 return
             if not message.get("more_body", False):
                 break

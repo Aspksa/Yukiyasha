@@ -56,7 +56,8 @@ class DiskModule:
             raise NotADirectoryError(relative_path)
 
         entries: list[dict[str, object]] = []
-        for item in sorted(directory.iterdir(), key=lambda value: (not value.is_dir(), value.name.lower())):
+        sort_key = lambda value: (not value.is_dir(), value.name.lower())
+        for item in sorted(directory.iterdir(), key=sort_key):
             if item.is_symlink():
                 continue
             stat = item.stat()

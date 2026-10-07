@@ -148,6 +148,9 @@ as ordinary environment variables (they win over the file). `http://` is accepte
   does not add up (overruns, odometer and fuel gaps, wrong fuel, fill-ups over the tank volume —
   set it on the vehicle, unclosed waybills, ...). Accept a finding you have checked; download the
   whole month (timesheet, analysis, fuel cards, findings) as one zip.
+- **Calculations:** *Закрытие месяца* also shows, per vehicle, the fuel at the start (first
+  waybill) and at the end (last closed waybill), the mileage by waybills and by the odometer, the
+  actual consumption (start + fill-ups − end), the consumption by the norm and the deviation.
 - **Timesheet:** the *Календарь* button shows the production calendar of Russia for 2026 and 2027
   (choose the year); holidays and transfers are painted in the timesheet and the month norm is
   shown. *Табель Т-12 (.xlsx)* fills your form. Calendar data: open data of xmlcalendar.ru

@@ -160,6 +160,7 @@ def test_the_package_holds_everything(module: PrimavtodorModule) -> None:
     assert name == "Закрытие месяца 2026-10.zip"
     assert "Табель 2026-10.xlsx" in names and "Анализ расхода ГСМ 2026-10.xlsx" in names
     assert any(n.startswith("Карточки ГСМ/") for n in names) and "Замечания 2026-10.csv" in names
+    assert "Расчёты по машинам 2026-10.csv" in names
 
 
 @pytest.fixture

@@ -11,6 +11,7 @@ from datetime import date
 from yukiyasha.modules.disk import DiskModule
 from yukiyasha.modules.manifest import ModuleManifest
 from yukiyasha.modules.primavtodor import calendar_ru
+from yukiyasha.modules.primavtodor.calculations import vehicle_calculations
 from yukiyasha.modules.primavtodor.errors import (
     InvalidDocumentNameError,
     PrintNotAvailableError,
@@ -536,6 +537,39 @@ class PrimavtodorModule:
                     "да" if item.get("dismissed") else "",
                 ])  # fmt: skip
             archive.writestr(f"Замечания {month}.csv", "\ufeff" + rows.getvalue())
+            archive.writestr(f"Расчёты по машинам {month}.csv", self._calculations_csv(month))
             if skipped:
                 archive.writestr("Что не вошло.txt", "\n".join(skipped) + "\n")
         return buffer.getvalue(), f"Закрытие месяца {month}.zip"
+
+    # ----- calculations -----
+
+    def month_calculations(self, month: str) -> dict[str, object]:
+        """Balances, mileage, actual consumption and the norm per vehicle for a month."""
+        self.timesheet._parse_month(month)
+        return vehicle_calculations(self.data, month)
+
+    def _calculations_csv(self, month: str) -> str:
+        import csv
+        import io
+
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, delimiter=";")
+        writer.writerow([
+            "Машина", "Водители", "Первый лист", "Последний закрытый лист",
+            "Остаток на начало, л", "Заправлено, л", "Остаток на конец, л",
+            "Пробег по листам, км", "Пробег по одометру, км", "Расход факт, л",
+            "По норме, л", "Отклонение, л", "Отклонение, %", "Примечания",
+        ])  # fmt: skip
+        for car in self.month_calculations(month)["vehicles"]:
+            last = car["last"]
+            writer.writerow([
+                f"{car['plate']} {car['model']}".strip(),
+                ", ".join(d["driver"] for d in car["drivers"]),
+                f"№ {car['first']['number']} от {car['first']['date']}",
+                f"№ {last['number']} от {last['date']}" if last else "",
+                car["fuel_start"], car["fills"], car["fuel_end"], car["km_waybills"],
+                car["km_odometer"], car["consumption"], car["norm"], car["deviation"],
+                car["deviation_pct"], "; ".join(car["notes"]),
+            ])  # fmt: skip
+        return "\ufeff" + buffer.getvalue()

@@ -798,7 +798,12 @@ async function pvLoadMonth() {
   if (!/^\d{4}-\d{2}$/.test(month)) return;
   try {
     const query = new URLSearchParams({ show_dismissed: String(pvById("month-show-dismissed").checked) });
-    pvRenderMonth(await api("GET", `/api/primavtodor/month/${month}/review?${query}`));
+    const [review, calculations] = await Promise.all([
+      api("GET", `/api/primavtodor/month/${month}/review?${query}`),
+      api("GET", `/api/primavtodor/month/${month}/calculations`),
+    ]);
+    pvRenderMonth(review);
+    pvRenderCalculations(calculations);
   } catch (failure) {
     error.textContent = describeError(failure);
     error.hidden = false;
@@ -860,6 +865,84 @@ function pvRenderMonth(review) {
     }),
   );
   pvById("month-findings-title").hidden = review.findings.length === 0;
+}
+
+function pvRenderCalculations(data) {
+  const table = pvById("month-calc");
+  const has = data.vehicles.length > 0;
+  pvById("month-calc-title").hidden = !has;
+  pvById("month-calc-wrap").hidden = !has;
+  if (!has) {
+    table.replaceChildren();
+    return;
+  }
+  const num = (value, digits = 1) => (value === null || value === undefined ? "—" : PV_UTIL.formatNumber(value, digits));
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (const label of [
+    "Машина", "Остаток на начало, л", "Заправлено, л", "Остаток на конец, л",
+    "Пробег по листам, км", "Пробег по одометру, км", "Расход факт, л", "По норме, л", "Отклонение, л",
+  ]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    headRow.append(th);
+  }
+  head.append(headRow);
+
+  const body = document.createElement("tbody");
+  for (const car of data.vehicles) {
+    const row = document.createElement("tr");
+    const who = document.createElement("th");
+    who.scope = "row";
+    who.textContent = `${car.plate} ${car.model}`.trim();
+    const small = document.createElement("small");
+    const drivers = car.drivers.map((d) => d.driver).join(", ");
+    const same = car.last && car.last.number === car.first.number;
+    const span = same ? `лист № ${car.first.number} (${PV_UTIL.formatDate(car.first.date)})` : car.last ? `листы № ${car.first.number} (${PV_UTIL.formatDate(car.first.date)}) … № ${car.last.number} (${PV_UTIL.formatDate(car.last.date)})` : `лист № ${car.first.number}, не закрыт`;
+    small.textContent = `${drivers} · ${span}`;
+    who.append(small);
+    row.append(who);
+    const deviation = car.deviation;
+    const cells = [
+      num(car.fuel_start), num(car.fills), num(car.fuel_end), num(car.km_waybills, 0),
+      car.km_odometer === null ? "—" : `${num(car.odometer_start, 0)} → ${num(car.odometer_end, 0)} (${num(car.km_odometer, 0)})`,
+      num(car.consumption), car.norm ? num(car.norm) : "—",
+      deviation === null ? "—" : `${deviation > 0 ? "+" : ""}${num(deviation)} (${car.deviation_pct > 0 ? "+" : ""}${car.deviation_pct}%)`,
+    ];
+    cells.forEach((text, index) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      if (index === cells.length - 1 && deviation !== null) td.className = deviation > 0 ? "over" : "under";
+      row.append(td);
+    });
+    body.append(row);
+    for (const note of car.notes) {
+      const noteRow = document.createElement("tr");
+      noteRow.className = "calc-note";
+      const cell = document.createElement("td");
+      cell.colSpan = cells.length + 1;
+      cell.textContent = `${car.plate}: ${note}`;
+      noteRow.append(cell);
+      body.append(noteRow);
+    }
+  }
+  const totals = data.totals;
+  const footer = document.createElement("tfoot");
+  const totalRow = document.createElement("tr");
+  const label = document.createElement("th");
+  label.textContent = "Итого";
+  totalRow.append(label);
+  for (const text of [
+    num(totals.fuel_start), num(totals.fills), num(totals.fuel_end), num(totals.km_waybills, 0), "",
+    num(totals.consumption), num(totals.norm), `${totals.deviation > 0 ? "+" : ""}${num(totals.deviation)}`,
+  ]) {
+    const td = document.createElement("td");
+    td.textContent = text;
+    totalRow.append(td);
+  }
+  footer.append(totalRow);
+  table.replaceChildren(head, body, footer);
 }
 
 async function pvToggleFinding(finding, button) {

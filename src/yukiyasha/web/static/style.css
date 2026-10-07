@@ -1102,3 +1102,17 @@ dialog input[type="text"] {
 .month-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .btn-small { padding: 4px 10px; font-size: 13px; }
 .month-hidden { margin-left: auto; font-size: 13px; }
+
+/* month calculations */
+.calc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.calc-table th, .calc-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.calc-table thead th { text-align: right; font-weight: 600; color: var(--muted); white-space: normal; }
+.calc-table tbody th, .calc-table tfoot th { text-align: left; font-weight: 600; white-space: normal; }
+.calc-table tbody th small { display: block; font-weight: 400; color: var(--muted); }
+.calc-table tfoot td, .calc-table tfoot th { border-top: 2px solid var(--line-strong); font-weight: 700; }
+.calc-table td.over { color: var(--danger); font-weight: 600; }
+.calc-table td.under { color: #1f9d55; font-weight: 600; }
+.calc-table .calc-note td { text-align: left; white-space: normal; color: var(--muted); font-size: 12px; }
+#month-calc-wrap { overflow-x: auto; }
+.calc-table tbody th, .calc-table tfoot th { min-width: 190px; }
+#dlg-month { width: min(1100px, 96vw); max-width: none; }

@@ -5,6 +5,14 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- **Month calculations per vehicle** (in *Закрытие месяца* and as `Расчёты по машинам <месяц>.csv`
+  in the zip): fuel at the start (the first waybill of the month), fuel at the end (the last
+  closed waybill), mileage by the waybills and by the odometer (first departure reading to last
+  return reading, so mileage without a waybill shows), fill-ups, actual consumption
+  (start + fill-ups - end), consumption by the norm (each waybill with its own season's rate),
+  the deviation in litres and percent, and the same per driver. A note names what does not add
+  up (mileage without waybills, remainders that do not chain, open waybills, a missing norm).
+  API: `GET /api/primavtodor/month/{ГГГГ-ММ}/calculations`.
 - **Closing of the month** (*Закрытие месяца* on the Примавтодор page): one screen with the steps
   (waybills closed, fill-ups loaded, control, timesheet norm), the findings and a single
   *Скачать всё за месяц (.zip)* with the Т-12 timesheet, the fuel analysis, a fuel card per

@@ -207,7 +207,10 @@ def test_disk_atomic_overwrite_preserves_original_on_publish_failure(
     disk.start()
     disk.write_text("file.txt", "original")
 
-    def fail_replace(source: str | bytes | os.PathLike[str], target: str | bytes | os.PathLike[str]) -> None:
+    def fail_replace(
+        source: str | bytes | os.PathLike[str],
+        target: str | bytes | os.PathLike[str],
+    ) -> None:
         raise OSError(errno.EIO, "simulated publish failure")
 
     monkeypatch.setattr(os, "replace", fail_replace)

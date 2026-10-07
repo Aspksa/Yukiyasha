@@ -119,7 +119,9 @@ class AiToolRegistry:
                 "type": "function",
                 "function": {
                     "name": "primavtodor_settings",
-                    "description": "Получить текущий сезон и настройки Примавтодора. Только чтение.",
+                    "description": (
+                        "Получить текущий сезон и настройки Примавтодора. Только чтение."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {},

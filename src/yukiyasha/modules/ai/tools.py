@@ -85,7 +85,6 @@ class AiToolRegistry:
             "primavtodor_timesheet": self._timesheet,
             "primavtodor_settings": self._settings,
             "primavtodor_list_documents": self._list_documents,
-            "primavtodor_read_document": self._read_document,
         }
         if proposals is not None:
             self._handlers["primavtodor_propose_change"] = self._propose_change
@@ -279,24 +278,6 @@ class AiToolRegistry:
                     },
                 },
             },
-            {
-                "type": "function",
-                "function": {
-                    "name": "primavtodor_read_document",
-                    "description": (
-                        "Прочитать текстовый документ Примавтодора и получить превью для ответа."
-                    ),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "section_id": section_schema,
-                            "name": {"type": "string"},
-                        },
-                        "required": ["section_id", "name"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
         ]
 
     def _proposal_definition(self) -> dict[str, object]:
@@ -451,15 +432,6 @@ class AiToolRegistry:
         limit = max(1, min(int(arguments.get("limit", 10)), 20))
         documents = self._primavtodor.list_documents(section_id, limit=limit)
         return {"section_id": section_id, "documents": documents}
-
-    def _read_document(self, arguments: dict[str, object]) -> dict[str, object]:
-        section_id = str(arguments.get("section_id", ""))
-        if section_id not in DOCUMENT_SECTIONS:
-            raise ValueError("Неизвестный раздел документов")
-        name = str(arguments.get("name", "")).strip()
-        if not name:
-            raise ValueError("Не указано имя документа")
-        return self._primavtodor.read_document(section_id, name)
 
     def _propose_change(self, arguments: dict[str, object]) -> dict[str, object]:
         assert self._proposals is not None

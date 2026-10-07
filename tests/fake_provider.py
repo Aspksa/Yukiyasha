@@ -8,12 +8,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 class FakeProvider:
     """Serves ``POST /v1/chat/completions``; records what it received."""
 
-    def __init__(self, chunks=("Привет", ", ", "мир"), status=200, plain_json=False,
-                 error_body=None):
+    def __init__(
+        self,
+        chunks=("Привет", ", ", "мир"),
+        status=200,
+        plain_json=False,
+        error_body=None,
+        tool_calls=None,
+    ):
         self.chunks = list(chunks)
         self.status = status
         self.plain_json = plain_json
         self.error_body = error_body
+        self.tool_calls = tool_calls
         self.requests: list[dict] = []
         provider = self
 
@@ -27,6 +34,25 @@ class FakeProvider:
                 provider.requests.append(
                     {"path": self.path, "auth": self.headers.get("Authorization"), "body": body}
                 )
+                if body.get("tools") is not None:
+                    payload = json.dumps(
+                        {
+                            "choices": [
+                                {
+                                    "message": {
+                                        "role": "assistant",
+                                        "content": None,
+                                        "tool_calls": provider.tool_calls or [],
+                                    }
+                                }
+                            ]
+                        }
+                    )
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(payload.encode())
+                    return
                 if provider.status != 200:
                     payload = json.dumps(provider.error_body or {"error": {"message": "nope"}})
                     self.send_response(provider.status)

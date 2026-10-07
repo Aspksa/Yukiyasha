@@ -31,6 +31,8 @@ const els = {
   viewFiles: $("#view-files"),
   viewSystem: $("#view-system"),
   viewModule: $("#view-module"),
+  viewEntity: $("#view-entity"),
+  viewTimesheet: $("#view-timesheet"),
   moduleGroups: $("#module-groups"),
   btnModuleRefresh: $("#btn-module-refresh"),
   btnModuleOpen: $("#btn-module-open"),
@@ -115,6 +117,8 @@ const KNOWN_ERRORS = {
   "NUL characters are not allowed in paths": "В пути есть недопустимый символ",
   "Filesystem permission denied": "Нет доступа к файлу",
   "Request body too large": "Файл слишком большой для отправки",
+  "Record not found": "Запись не найдена (возможно, её уже удалили)",
+  "Unknown record kind": "Неизвестный тип записей",
   "Origin is not allowed": "Запрос отклонён: недопустимый источник",
 };
 
@@ -128,6 +132,9 @@ class ApiError extends Error {
 
 function describeError(error) {
   if (error instanceof ApiError) {
+    if (error.detail && typeof error.detail === "object" && error.detail.message) {
+      return error.detail.message; // validation / in-use messages are already Russian
+    }
     if (typeof error.detail === "string") {
       if (error.detail.startsWith("Yukiyasha Disk is not ready")) return "Диск ещё не готов";
       if (error.detail.startsWith("Primavtodor module is not ready")) {
@@ -283,8 +290,14 @@ async function applyRoute(route) {
       navigate({ dir: "projects/work" });
       return;
     }
-    showView("module");
     updateNav(`module:${route.module}`);
+    if (route.section) {
+      // Sections with data (waybills, fuel, ...) and the timesheet have their own pages.
+      if (await openPrimavtodorSection(route.section)) return;
+      navigate({ module: route.module });
+      return;
+    }
+    showView("module");
     await loadModule();
     return;
   }
@@ -321,6 +334,8 @@ function showView(view) {
   els.viewFiles.hidden = view !== "files";
   els.viewSystem.hidden = view !== "system";
   els.viewModule.hidden = view !== "module";
+  els.viewEntity.hidden = view !== "entity";
+  els.viewTimesheet.hidden = view !== "timesheet";
 }
 
 function updateNav(section) {
@@ -729,7 +744,13 @@ function renderModuleSections(sections) {
             : "пусто";
 
           card.append(head, description, count);
-          card.addEventListener("click", () => navigate({ dir: section.path }));
+          card.addEventListener("click", () =>
+            navigate(
+              pvIsInteractive(section.id)
+                ? { module: "primavtodor", section: section.id }
+                : { dir: section.path },
+            ),
+          );
           return card;
         }),
       );
@@ -761,11 +782,15 @@ async function loadModule() {
   const controller = new AbortController();
   state.moduleController = controller;
   try {
-    const sections = await api("GET", "/api/primavtodor/sections", { signal: controller.signal });
+    const [sections] = await Promise.all([
+      api("GET", "/api/primavtodor/sections", { signal: controller.signal }),
+      pvEnsureSchema().catch(() => null), // without it the cards simply open the plain folder
+    ]);
     if (controller.signal.aborted) return;
     sectionByPath.clear();
     for (const section of sections) sectionByPath.set(section.path, section.id);
     renderModuleSections(sections);
+    pvRenderSeasonSwitch();
   } catch (error) {
     if (isAbort(error)) return;
     showModuleError(describeError(error));

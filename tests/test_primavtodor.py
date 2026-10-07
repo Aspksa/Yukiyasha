@@ -19,10 +19,11 @@ from yukiyasha.modules.primavtodor import (
 from yukiyasha.modules.registry import ModuleRegistry, ModuleState
 
 EXPECTED_FOLDERS = [
-    "Табель",
+    "Путевые листы",
+    "Горюче-смазочные материалы",
     "Сотрудники",
     "Гараж",
-    "Горюче-смазочные материалы",
+    "Табель",
     "Договора",
     "Счёт-оферта",
     "Служебные записки",
@@ -134,7 +135,7 @@ def test_snapshot_reports_folder_and_section_count(tmp_path: Path) -> None:
     assert snapshot["health"] == {
         "status": "ok",
         "directory": "projects/work/Примавтодор",
-        "sections": 9,
+        "sections": 10,
     }
 
 

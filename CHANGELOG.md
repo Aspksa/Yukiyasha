@@ -5,14 +5,61 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- **Summer and winter fuel norms.** Every vehicle has two norms (`norm_summer`, `norm_winter`,
+  l per 100 km) instead of one. A single **Лето / Зима switch** (in the headers of the module
+  page and of every record page) changes everything at once:
+  - the "Действует" norm shown for every vehicle;
+  - the season of every **open** waybill (closed waybills keep the season they were issued in, so
+    switching never rewrites history or the deviation of finished trips);
+  - the default season of new waybills.
+  Each waybill stores its own season, shown as a badge and editable in the form; its norm,
+  deviation and overrun warning are computed with the norm of that season. A vehicle without a
+  norm for the season is reported ("Для машины не задана норма на сезон …") instead of silently
+  using the other season's value.
+- The season is stored in `Примавтодор/settings.json` and survives restarts. Until someone
+  switches it by hand it follows the calendar (November–March = winter), marked as
+  `source: "calendar"`. API: `GET /api/primavtodor/settings`, `PUT /api/primavtodor/settings/season`.
+
+### Changed
+- vehicle records written by the previous version (one `norm_per_100km`) are upgraded on read:
+  both seasonal norms get the old value; waybills without a season count as summer.
+
+### Added
+- **Путевые листы** — a new Примавтодор section (10 sections now) and, together with
+  **ГСМ**, **Сотрудники**, **Гараж** and **Табель**, real linked data instead of plain folders:
+  - a driver (employee) has a **fuel card with a number** and an **assigned vehicle**;
+  - a waybill references a driver and a vehicle (the driver's car is suggested, odometer starts
+    from the vehicle's last reading) and computes distance, fuel issued, actual consumption,
+    norm by mileage and the deviation; it warns about another car, an overrun above 10 % and a
+    driver without a card;
+  - a fuel record (ГСМ) references a waybill; driver, vehicle and the **card number** are taken
+    from it and cannot be forged by the client; a driver without a card cannot be fuelled;
+  - the **timesheet** is built from waybills (a day with a waybill is a working day) plus manual
+    marks (Я, В, ОТ, Б, К, ПР) that override the automatic ones; conflicts are flagged;
+  - relations are checked: unknown or wrong references are rejected, unique plate / card /
+    personnel number / waybill number, and records that other records refer to cannot be deleted
+    (driver, vehicle, waybill) — delete in the order fuel → waybill → driver → vehicle;
+- records are plain readable JSON files, one per record, in the section folders on the disk
+  (e.g. `Путевые листы/wb-1a2b3c4d.json`); unreadable files are reported, not fatal;
+- REST API `/api/primavtodor/schema`, `/records/{kind}[/{id}]`, `/timesheet`,
+  `/timesheet/mark`; validation errors are `422` with a message per field;
+- UI pages: list with search, create/edit/delete forms generated from the schema (selects for
+  references, auto-fill, live fuel-card preview), computed details, and the timesheet grid with
+  month navigation and a mark dialog; deep links `#m=primavtodor&s=<section>`.
+
+### Security
+- every API call that changes data now requires a same-origin `Origin` (previously only the
+  disk API did); reads stay open.
+
+### Added
 - own icon and colour for each Примавтодор section (calendar, people, garage, drop, contract,
   receipt, envelope, seal, megaphone): a tinted tile on the module cards and a coloured icon on
   the section folders in the file list; colours are tuned separately for dark and light themes;
   icons and hues are derived from the stable section id (`i-sec-<id>`, `[data-sec="<id>"]`) and
   a test checks that every backend section has both;
 - module **Примавтодор** (`primavtodor`): registered after the disk, it creates and owns
-  `projects/work/Примавтодор` with nine section folders — Табель, Сотрудники, Гараж,
-  Горюче-смазочные материалы (group "Учёт"); Договора, Счёт-оферта, Служебные записки,
+  `projects/work/Примавтодор` with section folders — Путевые листы, Горюче-смазочные материалы,
+  Сотрудники, Гараж, Табель (group "Учёт"); Договора, Счёт-оферта, Служебные записки,
   Приказы, Распоряжения (group "Документы"). Folders deleted by the user are recreated on
   startup; existing files are never touched;
 - module API on top of the disk: section summaries with file counts, and list/read/write/delete

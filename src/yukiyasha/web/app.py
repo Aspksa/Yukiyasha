@@ -1,10 +1,13 @@
 """FastAPI entry point for Yukiyasha."""
 
+from collections.abc import Callable
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
+from typing import Annotated, Any, TypeVar
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -22,6 +25,13 @@ from yukiyasha.modules.disk import (
     DiskSecurityError,
     DiskTooLargeError,
 )
+from yukiyasha.modules.primavtodor import (
+    PrimavtodorError,
+    RecordInUseError,
+    RecordNotFoundError,
+    RecordValidationError,
+    UnknownEntityError,
+)
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.web.middleware import RequestBodyLimitMiddleware, SecurityHeadersMiddleware
 
@@ -34,6 +44,21 @@ class DiskWriteRequest(BaseModel):
     path: str
     content: str
     overwrite: bool = True
+
+
+class SeasonRequest(BaseModel):
+    season: str  # "summer" or "winter"
+
+
+class TimesheetMarkRequest(BaseModel):
+    month: str
+    employee_id: str
+    date: str
+    code: str | None = None  # empty/None clears the manual mark
+
+
+T = TypeVar("T")
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
 def _is_same_origin(origin: str, request: Request) -> bool:
@@ -55,6 +80,25 @@ def disk_http_error(exc: DiskError) -> HTTPException:
     if isinstance(exc, DiskSecurityError | DiskPathError | DiskEncodingError):
         return HTTPException(status_code=400, detail=str(exc))
     return HTTPException(status_code=500, detail="Filesystem operation failed")
+
+
+def primavtodor_http_error(exc: PrimavtodorError | DiskError) -> HTTPException:
+    """Map a Примавтодор (or underlying disk) error to one consistent HTTP status."""
+    if isinstance(exc, RecordValidationError):
+        return HTTPException(
+            status_code=422, detail={"message": exc.message, "fields": exc.fields}
+        )
+    if isinstance(exc, RecordInUseError):
+        return HTTPException(
+            status_code=409, detail={"message": exc.message, "references": exc.references}
+        )
+    if isinstance(exc, RecordNotFoundError):
+        return HTTPException(status_code=404, detail="Record not found")
+    if isinstance(exc, UnknownEntityError):
+        return HTTPException(status_code=404, detail="Unknown record kind")
+    if isinstance(exc, DiskError):
+        return disk_http_error(exc)
+    return HTTPException(status_code=400, detail=str(exc))
 
 
 def create_app(
@@ -87,7 +131,12 @@ def create_app(
 
     @application.middleware("http")
     async def protect_local_disk_api(request: Request, call_next):
-        if request.url.path.startswith("/api/disk"):
+        path = request.url.path
+        # Disk reads are protected too (file content), every other API only when it changes data.
+        protected = path.startswith("/api/disk") or (
+            path.startswith("/api/") and request.method not in SAFE_METHODS
+        )
+        if protected:
             origin = request.headers.get("origin")
             # The UI is served from this very origin, so anything else (another site, or
             # another local app on a different port) is a cross-origin request.
@@ -130,6 +179,65 @@ def create_app(
             return runtime.primavtodor.section_summaries()
         except DiskError as exc:
             raise disk_http_error(exc) from exc
+
+    def primavtodor_call(action: Callable[[], T]) -> T:
+        if runtime.primavtodor.state is not ModuleState.READY:
+            raise HTTPException(status_code=503, detail="Primavtodor module is not ready")
+        try:
+            return action()
+        except (PrimavtodorError, DiskError) as exc:
+            raise primavtodor_http_error(exc) from exc
+
+    @application.get("/api/primavtodor/schema")
+    def primavtodor_schema() -> dict[str, object]:
+        return runtime.primavtodor.schema()
+
+    @application.get("/api/primavtodor/settings")
+    def primavtodor_settings() -> dict[str, object]:
+        return primavtodor_call(runtime.primavtodor.settings.load)
+
+    @application.put("/api/primavtodor/settings/season")
+    def primavtodor_set_season(request: SeasonRequest) -> dict[str, object]:
+        """One switch for every fuel norm: summer or winter."""
+        return primavtodor_call(lambda: runtime.primavtodor.data.apply_season(request.season))
+
+    @application.get("/api/primavtodor/records/{kind}")
+    def primavtodor_list(kind: str) -> dict[str, object]:
+        return primavtodor_call(lambda: runtime.primavtodor.data.list_records(kind))
+
+    @application.post("/api/primavtodor/records/{kind}", status_code=201)
+    def primavtodor_create(
+        kind: str, payload: Annotated[dict[str, Any], Body()]
+    ) -> dict[str, object]:
+        return primavtodor_call(lambda: runtime.primavtodor.data.create(kind, payload))
+
+    @application.get("/api/primavtodor/records/{kind}/{record_id}")
+    def primavtodor_get(kind: str, record_id: str) -> dict[str, object]:
+        return primavtodor_call(lambda: runtime.primavtodor.data.get(kind, record_id))
+
+    @application.put("/api/primavtodor/records/{kind}/{record_id}")
+    def primavtodor_update(
+        kind: str, record_id: str, payload: Annotated[dict[str, Any], Body()]
+    ) -> dict[str, object]:
+        return primavtodor_call(lambda: runtime.primavtodor.data.update(kind, record_id, payload))
+
+    @application.delete("/api/primavtodor/records/{kind}/{record_id}")
+    def primavtodor_delete(kind: str, record_id: str) -> dict[str, str]:
+        primavtodor_call(lambda: runtime.primavtodor.data.delete(kind, record_id))
+        return {"status": "ok", "id": record_id}
+
+    @application.get("/api/primavtodor/timesheet")
+    def primavtodor_timesheet(month: str | None = Query(default=None)) -> dict[str, object]:
+        wanted = month or date.today().strftime("%Y-%m")
+        return primavtodor_call(lambda: runtime.primavtodor.timesheet.month_view(wanted))
+
+    @application.put("/api/primavtodor/timesheet/mark")
+    def primavtodor_timesheet_mark(request: TimesheetMarkRequest) -> dict[str, object]:
+        return primavtodor_call(
+            lambda: runtime.primavtodor.timesheet.set_mark(
+                request.month, request.employee_id, request.date, request.code
+            )
+        )
 
     @application.get("/api/disk")
     def disk_list(path: str = Query(default="")) -> dict[str, object]:

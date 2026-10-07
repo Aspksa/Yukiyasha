@@ -141,8 +141,9 @@ as ordinary environment variables (they win over the file). `http://` is accepte
   signers and the wording of the control once in *Данные для печати* (waybills page).
 - **Fuel statement:** ГСМ → *Загрузить выписку* (`.xls`/`.xlsx` from the card provider). A preview
   shows what will be loaded and what cannot be matched; loading the same file again adds nothing.
-  A fill-up is matched through the card number to the driver and to that driver's waybill on the
-  date of the fill-up.
+  The card belongs to the driver, so a fill-up is matched through the card number to the driver
+  and to a car: that day's waybill if there is one, otherwise the car assigned to the driver. The
+  month's fill-ups of a car (by card, with or without a waybill) feed the calculations.
 - **Monthly fuel card:** open a vehicle → choose the month → *Скачать*: a sheet per driver.
 - **Closing of the month:** on the Примавтодор page, *Закрытие месяца* shows what is done and what
   does not add up (overruns, odometer and fuel gaps, wrong fuel, fill-ups over the tank volume —

@@ -54,7 +54,8 @@ Completed proposals are one-shot and cannot be applied again.
 pure (plain values in, `.xlsx` bytes out). The waybill sheet holds the form twice side by side, so
 every value is written in both halves. The monthly card and the report keep live `SUM` formulas.
 `statement.py` reads the fuel-card provider's `.xls`/`.xlsx` (Windows-1251 for `.xls`);
-`fuel_import.py` matches each fill-up card -> employee -> the driver's waybill on that date,
+`fuel_import.py` matches each fill-up card -> employee (driver) -> a car (that day's waybill, else the car of the
+day's waybills, else the driver's assigned car, else the only car of the month),
 reports what it cannot match and skips what is already on file. `checks.py` holds the control rules (pure functions over the records, findings with stable ids);
 `calculations.py` derives the month figures per vehicle and driver (balances, mileage by waybills
 and by the odometer, actual and norm consumption; nothing stored); `month_review.py` turns them into the steps of *Закрытие месяца*; accepted findings are kept in

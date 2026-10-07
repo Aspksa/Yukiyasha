@@ -4,6 +4,17 @@ All notable changes to Yukiyasha are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **Fill-ups follow the fuel card, not the waybill.** A fuel record no longer needs a waybill:
+  the card belongs to the driver and the driver to a car, so a statement fill-up with no waybill
+  on that day is loaded against the driver's car (the car of that day's waybills, else the car
+  assigned to the driver, else the only car of the driver's waybills that month). Only a fill-up
+  whose driver or car cannot be told is left out, with the reason. The fuel form gets *Водитель*
+  and *Машина* (the car is filled in from the driver); with a waybill both still come from it.
+- The month calculations, the fuel card and the analysis count the month's fill-ups **per car**
+  by the card operations (by date), with or without a waybill. A car with fill-ups but no
+  waybills in the month is listed too, carrying over its last remainder, and the control flags it.
+
 ### Added
 - **Month calculations per vehicle** (in *Закрытие месяца* and as `Расчёты по машинам <месяц>.csv`
   in the zip): fuel at the start (the first waybill of the month), fuel at the end (the last

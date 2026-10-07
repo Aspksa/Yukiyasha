@@ -317,23 +317,32 @@ class PrimavtodorModule:
             for w in self.data.snapshot(KIND_WAYBILLS)
             if w.get("vehicle_id") == vehicle_id and str(w.get("date", "")).startswith(month)
         ]
-        if not waybills:
-            raise PrintNotAvailableError(f"За {month} нет путевых листов на эту машину")
         waybills.sort(key=lambda w: (str(w.get("date")), str(w.get("number"))))
-        fuel = self.data.snapshot(KIND_FUEL)
+        all_waybills = {str(w["id"]): w for w in self.data.snapshot(KIND_WAYBILLS)}
+        month_fuel: list[tuple[str, dict[str, object]]] = []  # (card owner, fill-up) of this car
+        for record in self.data.snapshot(KIND_FUEL):
+            if not str(record.get("date", "")).startswith(month):
+                continue
+            linked = all_waybills.get(str(record.get("waybill_id")), {})
+            if str(record.get("vehicle_id") or linked.get("vehicle_id")) != vehicle_id:
+                continue
+            month_fuel.append((str(record.get("driver_id") or linked.get("driver_id")), record))
+        if not waybills and not month_fuel:
+            raise PrintNotAvailableError(f"За {month} нет путевых листов и заправок на эту машину")
 
         views = {r["id"]: r for r in self.data.list_records(KIND_WAYBILLS)["records"]}
         by_driver: dict[str, list[dict[str, object]]] = {}
         for waybill in waybills:
             by_driver.setdefault(str(waybill.get("driver_id")), []).append(waybill)
+        for owner, _ in month_fuel:  # a card of a driver who had no waybill on this car
+            by_driver.setdefault(owner, [])
 
         cards: list[FuelCard] = []
         vehicle_name = f"{vehicle.get('model') or ''} {vehicle.get('plate') or ''}".strip()
         for driver_id, driver_waybills in by_driver.items():
             driver = self.data.get(KIND_EMPLOYEES, driver_id)["values"]
-            ids = {w["id"] for w in driver_waybills}
             fills = sorted(
-                (f for f in fuel if f.get("waybill_id") in ids),
+                (f for owner, f in month_fuel if owner == driver_id),
                 key=lambda f: (str(f.get("date")), str(f.get("time") or "")),
             )
             distance = consumption = 0.0
@@ -355,7 +364,9 @@ class PrimavtodorModule:
                     driver=str(driver.get("full_name") or ""),
                     card_number=str(driver.get("fuel_card_number") or ""),
                     distance_km=int(distance),
-                    opening=float(driver_waybills[0].get("fuel_out") or 0),
+                    opening=(
+                        float(driver_waybills[0].get("fuel_out") or 0) if driver_waybills else 0.0
+                    ),
                     fillups=[float(f.get("liters") or 0) for f in fills],
                     consumption=consumption,
                     norm_rate=rate,
@@ -375,51 +386,33 @@ class PrimavtodorModule:
             first = date.fromisoformat(f"{month}-01")
         except ValueError:
             raise PrintNotAvailableError("Месяц в формате ГГГГ-ММ, например 2026-10") from None
-        fuel = self.data.snapshot(KIND_FUEL)
-        employees = self.data.snapshot(KIND_EMPLOYEES)
-        names = {e["id"]: str(e.get("full_name") or "") for e in employees}
-        in_month = [
-            w for w in self.data.snapshot(KIND_WAYBILLS) if str(w.get("date", "")).startswith(month)
-        ]
-        waybills = sorted(in_month, key=lambda w: (str(w.get("date")), str(w.get("number"))))
-
-        views = {r["id"]: r for r in self.data.list_records(KIND_WAYBILLS)["records"]}
+        vehicles = {str(v["id"]): v for v in self.data.snapshot(KIND_VEHICLES)}
         rows: list[VehicleRow] = []
-        for vehicle in sorted(self.data.snapshot(KIND_VEHICLES), key=lambda v: str(v.get("plate"))):
-            own = [w for w in waybills if w.get("vehicle_id") == vehicle["id"]]
-            if not own:
-                continue
-            ids = {w["id"] for w in own}
-            drivers: list[str] = []
-            for waybill in own:
-                name = short_name(names.get(waybill.get("driver_id"), ""))
-                if name and name not in drivers:
-                    drivers.append(name)
+        for car in vehicle_calculations(self.data, month)["vehicles"]:  # one source of figures
+            vehicle = vehicles.get(str(car["vehicle_id"]), {})
+            drivers = [short_name(str(d["driver"])) for d in car["drivers"] if d["driver"]]
+            actual = car["consumption"] if car["consumption"] is not None else car[
+                "consumption_waybills"
+            ]
             row = VehicleRow(
-                plate=str(vehicle.get("plate") or ""),
-                model=str(vehicle.get("model") or ""),
+                plate=str(car["plate"]),
+                model=str(car["model"]),
                 kind=self.FORM_KINDS.get(str(vehicle.get("waybill_form") or "car"), "легковой"),
                 drivers=", ".join(drivers) or "Нет водителя",
                 petrol=str(vehicle.get("fuel_type") or "ДТ") != "ДТ",
-                opening=float(own[0].get("fuel_out") or 0),
-                fillups=sum(
-                    float(f.get("liters") or 0) for f in fuel if f.get("waybill_id") in ids
-                ),
+                distance_km=int(car["km_waybills"] or 0),
+                opening=float(car["fuel_start"] or 0),
+                fillups=float(car["fills"] or 0),
+                actual=float(actual or 0),
+                norm=float(car["norm"] or 0),
             )
-            open_count = 0
-            for waybill in own:
-                computed = views[waybill["id"]]["computed"]
-                if computed.get("distance") is None:
-                    open_count += 1
-                    continue
-                row.distance_km += int(computed["distance"])
-                row.actual += float(computed.get("consumption") or 0)
-                row.norm += float(computed.get("norm") or 0)
             notes = []
-            if open_count:
-                notes.append(f"открытых путевых листов: {open_count}")
+            if car["closed"] < car["waybills"]:
+                notes.append(f"открытых путевых листов: {car['waybills'] - car['closed']}")
             if row.norm and row.actual > row.norm * 1.10:
                 notes.append(f"перерасход {row.actual - row.norm:.1f} л")
+            if car["fills_without_waybill"]:
+                notes.append(f"заправок без листа: {car['fills_without_waybill']}")
             row.note = "; ".join(notes)
             rows.append(row)
 

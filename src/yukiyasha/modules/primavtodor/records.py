@@ -299,6 +299,9 @@ class Records:
         if entity.kind == KIND_WAYBILLS and _blank(payload.get("season")):
             # A waybill that does not say otherwise starts in the current season.
             payload = {**payload, "season": ctx.season}
+        if entity.kind == KIND_FUEL and not _blank(payload.get("waybill_id")):
+            # With a waybill the driver and the car come from it; nothing the client sends counts.
+            payload = {**payload, "driver_id": None, "vehicle_id": None}
         for item in entity.fields:
             values[item.name] = self._parse(item, payload.get(item.name), errors)
         self._normalize(entity.kind, values)
@@ -490,18 +493,32 @@ class Records:
         if liters is not None and liters <= 0:
             errors["liters"] = "Количество должно быть больше нуля"
         waybill = ctx.get(KIND_WAYBILLS, values.get("waybill_id"))
-        if waybill is None:
-            return
-        driver = ctx.get(KIND_EMPLOYEES, waybill.get("driver_id"))
+        if waybill is not None:
+            driver_id, vehicle_id = waybill.get("driver_id"), waybill.get("vehicle_id")
+            where = "waybill_id"
+        else:
+            # A fill-up by the driver's fuel card without a waybill: the car is the one the
+            # driver is assigned to unless it is given.
+            driver_id = values.get("driver_id")
+            where = "driver_id"
+            if not driver_id:
+                errors["driver_id"] = "Укажите путевой лист или водителя"
+                return
+            owner = ctx.get(KIND_EMPLOYEES, driver_id)
+            vehicle_id = values.get("vehicle_id") or (owner.get("vehicle_id") if owner else None)
+            if not vehicle_id:
+                errors["vehicle_id"] = "Укажите машину: у водителя она не закреплена"
+                return
+        driver = ctx.get(KIND_EMPLOYEES, driver_id)
         card = str(driver.get("fuel_card_number") or "") if driver else ""
         if not card:
             name = driver.get("full_name") if driver else "водителя"
-            errors["waybill_id"] = f"У водителя «{name}» не закреплена топливная карта"
+            errors[where] = f"У водителя «{name}» не закреплена топливная карта"
             return
-        vehicle = ctx.get(KIND_VEHICLES, waybill.get("vehicle_id"))
-        # Derived from the waybill, so a fuel record can never contradict it.
-        values["driver_id"] = waybill.get("driver_id")
-        values["vehicle_id"] = waybill.get("vehicle_id")
+        vehicle = ctx.get(KIND_VEHICLES, vehicle_id)
+        # Derived from the waybill (or the driver), so a fuel record can never contradict it.
+        values["driver_id"] = driver_id
+        values["vehicle_id"] = vehicle_id
         values["card_number"] = card
         if not values.get("fuel_type") and vehicle:
             values["fuel_type"] = vehicle.get("fuel_type")
@@ -514,6 +531,9 @@ class Records:
             for waybill in ctx.all(KIND_WAYBILLS).values():
                 if waybill.get("driver_id") == record_id:
                     found.append(self._label(KIND_WAYBILLS, waybill, ctx))
+            for fuel in ctx.all(KIND_FUEL).values():
+                if fuel.get("driver_id") == record_id and not fuel.get("waybill_id"):
+                    found.append(f"заправка {format_date(fuel.get('date'))}")
         elif kind == KIND_VEHICLES:
             for employee in ctx.all(KIND_EMPLOYEES).values():
                 if employee.get("vehicle_id") == record_id:
@@ -521,6 +541,9 @@ class Records:
             for waybill in ctx.all(KIND_WAYBILLS).values():
                 if waybill.get("vehicle_id") == record_id:
                     found.append(self._label(KIND_WAYBILLS, waybill, ctx))
+            for fuel in ctx.all(KIND_FUEL).values():
+                if fuel.get("vehicle_id") == record_id and not fuel.get("waybill_id"):
+                    found.append(f"заправка {format_date(fuel.get('date'))}")
         elif kind == KIND_WAYBILLS:
             for fuel in ctx.all(KIND_FUEL).values():
                 if fuel.get("waybill_id") == record_id:

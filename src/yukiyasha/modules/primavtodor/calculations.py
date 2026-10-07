@@ -2,7 +2,10 @@
 
 For every vehicle with waybills in the month:
 
-* **fuel at the start** is the remainder at departure on the first waybill (first day);
+* **fill-ups** are the month's fuel-card operations of the vehicle (the card belongs to the
+  driver, the driver to the vehicle), with or without a waybill on that day;
+* **fuel at the start** is the remainder at departure on the first waybill (first day), or the
+  last remainder of the previous month when the vehicle has no waybill this month;
 * **fuel at the end** is the remainder at return on the last closed waybill;
 * **mileage by waybills** is the sum of the closed waybills' distances; **by the odometer** it is
   the last closed waybill's return reading minus the first waybill's departure reading, so the
@@ -55,10 +58,14 @@ def _totals(rows: list[dict[str, object]], views: dict[str, dict[str, object]]) 
 
 def vehicle_calculations(data: Records, month: str) -> dict[str, object]:
     views = {str(r["id"]): r["computed"] for r in data.list_records(KIND_WAYBILLS)["records"]}
-    waybills = [
-        w for w in data.snapshot(KIND_WAYBILLS) if str(w.get("date", "")).startswith(month)
-    ]
-    fuel = data.snapshot(KIND_FUEL)
+    everything = data.snapshot(KIND_WAYBILLS)
+    waybills = [w for w in everything if str(w.get("date", "")).startswith(month)]
+    waybill_vehicle = {str(w["id"]): str(w.get("vehicle_id")) for w in everything}
+    fuel = [f for f in data.snapshot(KIND_FUEL) if str(f.get("date", "")).startswith(month)]
+    fuel_by_vehicle: dict[str, list[dict[str, object]]] = {}
+    for record in fuel:
+        owner = str(record.get("vehicle_id") or waybill_vehicle.get(str(record.get("waybill_id"))))
+        fuel_by_vehicle.setdefault(owner, []).append(record)
     vehicles = {str(v["id"]): v for v in data.snapshot(KIND_VEHICLES)}
     names = {str(e["id"]): str(e.get("full_name") or "") for e in data.snapshot(KIND_EMPLOYEES)}
 
@@ -66,17 +73,29 @@ def vehicle_calculations(data: Records, month: str) -> dict[str, object]:
     for waybill in _sorted(waybills):
         by_vehicle.setdefault(str(waybill.get("vehicle_id")), []).append(waybill)
 
+    for vehicle_id in fuel_by_vehicle:  # fill-ups of a car that has no waybill this month
+        by_vehicle.setdefault(vehicle_id, [])
+
     result = []
     for vehicle_id, rows in by_vehicle.items():
         vehicle = vehicles.get(vehicle_id, {})
         closed = [w for w in rows if views.get(str(w["id"]), {}).get("distance") is not None]
-        first, last_closed = rows[0], (closed[-1] if closed else None)
-        ids = {str(w["id"]) for w in rows}
-        fills = sum(float(f.get("liters") or 0) for f in fuel if str(f.get("waybill_id")) in ids)
+        first, last_closed = (rows[0] if rows else None), (closed[-1] if closed else None)
+        own_fuel = fuel_by_vehicle.get(vehicle_id, [])
+        fills = sum(float(f.get("liters") or 0) for f in own_fuel)
+        unlinked = [f for f in own_fuel if not f.get("waybill_id")]
 
-        fuel_start = _num(first.get("fuel_out")) or 0.0
+        if first is not None:
+            fuel_start = _num(first.get("fuel_out")) or 0.0
+        else:  # no waybill this month: carry over the last remainder of an earlier month
+            earlier = [
+                w for w in _sorted(everything)
+                if str(w.get("vehicle_id")) == vehicle_id and str(w.get("date")) < f"{month}-01"
+                and views.get(str(w["id"]), {}).get("distance") is not None
+            ]  # fmt: skip
+            fuel_start = (_num(earlier[-1].get("fuel_in")) or 0.0) if earlier else 0.0
         fuel_end = _num(last_closed.get("fuel_in")) if last_closed else None
-        odometer_start = _num(first.get("odometer_out"))
+        odometer_start = _num(first.get("odometer_out")) if first else None
         odometer_end = _num(last_closed.get("odometer_in")) if last_closed else None
         totals = _totals(closed, views)
 
@@ -95,6 +114,14 @@ def vehicle_calculations(data: Records, month: str) -> dict[str, object]:
 
         notes = []
         open_count = len(rows) - len(closed)
+        if not rows:
+            notes.append("В этом месяце нет путевых листов: остатки и пробег не посчитать")
+        if unlinked:
+            liters_unlinked = sum(float(f.get("liters") or 0) for f in unlinked)
+            notes.append(
+                f"Заправок без путевого листа: {len(unlinked)} ({liters_unlinked:g} л), "
+                "они учтены по карте водителя"
+            )
         if open_count:
             notes.append(f"Открытых листов: {open_count}, в расчёт идут только закрытые")
         if km_odometer is not None and abs(km_odometer - totals["distance"]) > 0.5:
@@ -137,7 +164,10 @@ def vehicle_calculations(data: Records, month: str) -> dict[str, object]:
                 "fuel_type": str(vehicle.get("fuel_type") or ""),
                 "waybills": len(rows),
                 "closed": len(closed),
-                "first": {"number": first.get("number"), "date": first.get("date")},
+                "fills_without_waybill": len(unlinked),
+                "first": (
+                    {"number": first.get("number"), "date": first.get("date")} if first else None
+                ),
                 "last": (
                     {"number": last_closed.get("number"), "date": last_closed.get("date")}
                     if last_closed

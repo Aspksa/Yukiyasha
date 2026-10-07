@@ -554,6 +554,13 @@ function pvWireForm(entity, lists, isNew) {
   }
 
   if (entity.kind === "fuel") {
+    const driverSelect = field("driver_id");
+    driverSelect.addEventListener("change", () => {
+      // Without a waybill the fill-up goes to the car the driver is assigned to.
+      const driver = (lists.employees ?? []).find((item) => item.id === driverSelect.value);
+      const car = field("vehicle_id");
+      if (driver?.values.vehicle_id && !car.value) car.value = driver.values.vehicle_id;
+    });
     const waybillSelect = field("waybill_id");
     waybillSelect.addEventListener("change", () => {
       const waybill = (lists.waybills ?? []).find((item) => item.id === waybillSelect.value);
@@ -713,8 +720,10 @@ function pvRenderImport(report) {
   const counts = report.counts;
   const summary = pvById("import-summary");
   const parts = [`${report.period || "Выписка"}: операций ${counts.total}`];
+  const withoutWaybill = report.operations.filter((op) => op.status === "new" && !op.waybill).length;
   if (report.applied) parts.push(`загружено ${counts.new}`);
   else parts.push(`будет загружено ${counts.new} (${PV_UTIL.formatNumber(report.liters_new)} л)`);
+  if (withoutWaybill) parts.push(`из них без путевого листа ${withoutWaybill} (по машине водителя)`);
   parts.push(`уже были ${counts.duplicate}`);
   if (counts.unmatched + counts.failed) parts.push(`не удалось привязать ${counts.unmatched + counts.failed}`);
   summary.textContent = parts.join(" · ");
@@ -898,8 +907,11 @@ function pvRenderCalculations(data) {
     who.textContent = `${car.plate} ${car.model}`.trim();
     const small = document.createElement("small");
     const drivers = car.drivers.map((d) => d.driver).join(", ");
-    const same = car.last && car.last.number === car.first.number;
-    const span = same ? `лист № ${car.first.number} (${PV_UTIL.formatDate(car.first.date)})` : car.last ? `листы № ${car.first.number} (${PV_UTIL.formatDate(car.first.date)}) … № ${car.last.number} (${PV_UTIL.formatDate(car.last.date)})` : `лист № ${car.first.number}, не закрыт`;
+    const same = car.first && car.last && car.last.number === car.first.number;
+    let span = "путевых листов нет";
+    if (same) span = `лист № ${car.first.number} (${PV_UTIL.formatDate(car.first.date)})`;
+    else if (car.first && car.last) span = `листы № ${car.first.number} (${PV_UTIL.formatDate(car.first.date)}) … № ${car.last.number} (${PV_UTIL.formatDate(car.last.date)})`;
+    else if (car.first) span = `лист № ${car.first.number}, не закрыт`;
     small.textContent = `${drivers} · ${span}`;
     who.append(small);
     row.append(who);

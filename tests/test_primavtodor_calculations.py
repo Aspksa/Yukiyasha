@@ -157,3 +157,83 @@ def test_calculations_over_http(client: TestClient) -> None:
 
     assert ok.status_code == 200 and ok.json()["vehicles"][0]["consumption"] == 10
     assert bad.status_code == 422
+
+
+# ----- fill-ups by the card of the driver, with or without a waybill -----
+
+
+def test_fills_by_the_card_count_for_the_vehicle_even_without_a_waybill(
+    module: PrimavtodorModule,
+) -> None:
+    vehicle = make_vehicle(module, plate="Т1", model="Тест", norm_summer="10")
+    driver = make_driver(module, vehicle["id"], fuel_card_number="500")
+    make_waybill(module, driver, vehicle, number="1", date="2026-10-02", season="summer",
+                 odometer_out=0, odometer_in=100, fuel_out=20, fuel_in=15)  # fmt: skip
+    one = module.data.create("fuel", {"driver_id": driver["id"], "date": "2026-10-20",
+                                      "liters": 30})  # fmt: skip
+    assert one["values"]["vehicle_id"] == vehicle["id"] and not one["values"]["waybill_id"]
+    assert one["values"]["card_number"] == "500"
+
+    car = module.month_calculations("2026-10")["vehicles"][0]
+
+    assert car["fills"] == 30 and car["fills_without_waybill"] == 1
+    assert car["consumption"] == 20 + 30 - 15 == 35  # start + fill-ups - end
+    assert any("без путевого листа: 1" in note for note in car["notes"])
+
+
+def test_a_fill_up_without_a_waybill_needs_a_driver_a_car_and_a_card(
+    module: PrimavtodorModule,
+) -> None:
+    vehicle = make_vehicle(module)
+    no_car = make_driver(module, None, fuel_card_number="500", personnel_number="9")
+    no_card = make_driver(module, vehicle["id"], fuel_card_number="", personnel_number="8")
+
+    for payload, field in (
+        ({"date": "2026-10-20", "liters": 5}, "driver_id"),
+        ({"driver_id": no_car["id"], "date": "2026-10-20", "liters": 5}, "vehicle_id"),
+        ({"driver_id": no_card["id"], "date": "2026-10-20", "liters": 5}, "driver_id"),
+    ):
+        with pytest.raises(RecordValidationError) as exc:
+            module.data.create("fuel", payload)
+        assert field in exc.value.fields
+    given = module.data.create("fuel", {"driver_id": no_car["id"], "vehicle_id": vehicle["id"],
+                                        "date": "2026-10-20", "liters": 5})  # fmt: skip
+    assert given["values"]["vehicle_id"] == vehicle["id"]
+
+
+def test_a_car_with_fill_ups_but_no_waybills_is_listed_and_carries_its_balance(
+    module: PrimavtodorModule,
+) -> None:
+    vehicle = make_vehicle(module, plate="Т2", model="Тест")
+    driver = make_driver(module, vehicle["id"], fuel_card_number="501")
+    make_waybill(module, driver, vehicle, number="1", date="2026-09-20", season="summer",
+                 odometer_out=0, odometer_in=100, fuel_out=20, fuel_in=12)  # September
+    module.data.create("fuel", {"driver_id": driver["id"], "date": "2026-10-05", "liters": 40})
+
+    car = module.month_calculations("2026-10")["vehicles"][0]
+
+    assert car["waybills"] == 0 and car["first"] is None and car["last"] is None
+    assert car["fuel_start"] == 12 and car["fills"] == 40  # the remainder of the last waybill
+    assert car["consumption"] is None
+    assert any("нет путевых листов" in note for note in car["notes"])
+    findings = module.month_review("2026-10")["findings"]
+    assert any(f["code"] == "FUEL_NO_WAYBILLS" for f in findings)
+
+
+def test_card_sheet_and_analysis_use_the_same_fill_ups(module: PrimavtodorModule) -> None:
+    import io
+
+    import openpyxl
+
+    vehicle = make_vehicle(module, plate="Т3", model="Тест", norm_summer="10")
+    driver = make_driver(module, vehicle["id"], fuel_card_number="502")
+    make_waybill(module, driver, vehicle, number="1", date="2026-10-02", season="summer",
+                 odometer_out=0, odometer_in=100, fuel_out=20, fuel_in=15)  # fmt: skip
+    module.data.create("fuel", {"driver_id": driver["id"], "date": "2026-10-20", "liters": 30})
+
+    card = openpyxl.load_workbook(io.BytesIO(module.fuel_cards(vehicle["id"], "2026-10")[0]))
+    report = openpyxl.load_workbook(io.BytesIO(module.fuel_report("2026-10")[0]))["Анализ"]
+
+    assert [card.worksheets[0].cell(r, 2).value for r in (9, 10)] == [30, None]
+    petrol_or_diesel = [report[f"{c}9"].value for c in "HI"]  # the fill-ups column pair
+    assert 30 in petrol_or_diesel

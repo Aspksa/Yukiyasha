@@ -5,13 +5,22 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
-- module **Примавтодор** (`primavtodor`, skeleton): registered after the disk, it creates and
-  owns `projects/work/Примавтодор`, which appears in the "Рабочие" section; the folder is
-  recreated on startup if it was deleted; the module shows up on the system page;
+- module **Примавтодор** (`primavtodor`): registered after the disk, it creates and owns
+  `projects/work/Примавтодор` with nine section folders — Табель, Сотрудники, Гараж,
+  Горюче-смазочные материалы (group "Учёт"); Договора, Счёт-оферта, Служебные записки,
+  Приказы, Распоряжения (group "Документы"). Folders deleted by the user are recreated on
+  startup; existing files are never touched;
+- module API on top of the disk: section summaries with file counts, and list/read/write/delete
+  of documents per section (single plain file names, all disk validation still applies);
+- `GET /api/primavtodor/sections` and a module page in the UI with a card per section that
+  opens the folder in the file manager; the sidebar highlights the module for everything
+  inside its folder; `#m=primavtodor` deep link;
 - `DiskModule.make_dir()` — idempotent directory creation with the same path validation as
   every other disk operation.
 
 ### Fixed
+- phones narrower than ~390 px no longer scroll the whole page sideways (the sidebar nav
+  strip scrolls instead);
 - `pip install .` / wheel build failed with a duplicate-file error (redundant hatch
   `force-include` of the static UI); CI now builds the wheel and checks the packaged UI;
 - a user file named like `.yukiyasha-<anything>` was hidden and silently deleted at startup;

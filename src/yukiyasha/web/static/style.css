@@ -436,6 +436,37 @@ h1 { margin: 0; font-size: clamp(24px, 3vw, 30px); letter-spacing: -.02em; line-
 .telemetry summary { padding: 14px 18px; cursor: pointer; color: var(--muted); font-weight: 600; }
 .telemetry pre { margin: 0; padding: 4px 18px 18px; overflow: auto; font: 13px/1.7 var(--font-mono); color: var(--ok); }
 
+/* ---------- module page ---------- */
+
+.module-lead { margin: 0 0 4px; color: var(--muted); max-width: 70ch; }
+.module-group .section-title { margin-top: 24px; }
+
+.section-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+
+.section-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 112px;
+  padding: 16px 18px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.section-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
+.section-card:active { transform: translateY(1px); }
+.section-card .card-title { display: flex; align-items: center; gap: 10px; font-weight: 650; }
+.section-card .card-title .icon { color: var(--accent); }
+.section-card .card-desc { color: var(--muted); font-size: 13.5px; }
+.section-card .card-count { margin-top: auto; color: var(--faint); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.section-card .card-count.filled { color: var(--accent); font-weight: 600; }
+
+.module-error { padding: 28px 8px; color: var(--muted); }
+.module-error strong { display: block; color: var(--text); margin-bottom: 4px; }
+.module-error .btn { margin-top: 12px; }
+
 /* ---------- dialogs & toasts ---------- */
 
 dialog {
@@ -488,7 +519,7 @@ dialog input[type="text"] {
 }
 
 @media (max-width: 900px) {
-  .app { grid-template-columns: 1fr; }
+  .app { grid-template-columns: minmax(0, 1fr); }
 
   .sidebar {
     position: static;
@@ -506,8 +537,18 @@ dialog input[type="text"] {
   .foot-link { display: none; }
   .status span { display: none; }
 
-  .nav { order: 3; width: 100%; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
-  .nav-item { flex-direction: column; gap: 4px; padding: 8px 4px; text-align: center; }
+  /* Five items do not fit a 320-360 px phone: let the strip scroll instead of the page. */
+  .nav {
+    order: 3;
+    width: 100%;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(max-content, 1fr);
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav-item { flex-direction: column; gap: 4px; padding: 8px 10px; text-align: center; white-space: nowrap; }
   .nav-item small { display: none; }
   .nav-item strong { font-size: 12.5px; }
 

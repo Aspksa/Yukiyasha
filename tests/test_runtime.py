@@ -60,7 +60,7 @@ def test_runtime_registers_primavtodor_after_the_disk_and_creates_its_folder(
 
     assert runtime.state is RuntimeState.READY
     assert runtime.primavtodor.state is ModuleState.READY
-    assert (tmp_path / "disk" / "projects" / "work" / "Примавтодор").is_dir()
+    assert (tmp_path / "disk" / "projects" / "work" / "Примавтодор" / "Табель").is_dir()
 
     runtime.stop()
     assert runtime.primavtodor.state is ModuleState.STOPPED

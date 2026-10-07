@@ -40,14 +40,24 @@ Core and modules never import from Web/API.
 
 ## Модуль Примавтодор
 
-Skeleton of a work-project module. It depends only on the disk module (never on the web layer),
-is registered right after it (modules start in registration order and stop in reverse) and owns
-the folder `projects/work/Примавтодор`. The module id is ASCII (`primavtodor`); the display name
-is Russian. Its declared permissions (`disk.read`, `disk.write`) are metadata until the central
-permission boundary exists.
+Work-project module. It depends only on the disk module (never on the web layer), is registered
+right after it (modules start in registration order and stop in reverse) and owns the folder
+`projects/work/Примавтодор`. Each section is one sub-folder; all data lives on the disk and the
+module reaches it only through the disk's public API.
+
+| Group | Sections |
+| --- | --- |
+| Учёт | Табель, Сотрудники, Гараж, Горюче-смазочные материалы |
+| Документы | Договора, Счёт-оферта, Служебные записки, Приказы, Распоряжения |
+
+Section ids are ASCII (`timesheet`, `employees`, `garage`, `fuel`, `contracts`, `invoice_offer`,
+`memos`, `orders`, `directives`); titles and folder names are Russian. The module id is
+`primavtodor`. Documents are plain text files addressed by a single file name inside a section;
+the disk still validates every path. Declared permissions (`disk.read`, `disk.write`,
+`disk.delete`) are metadata until the central permission boundary exists.
 
 Note: a failing module start rolls back every module started before it (registry semantics), so a
-non-folder entry named `Примавтодор` in the work section degrades the whole runtime.
+file (not a folder) named like a section degrades the whole runtime.
 
 ## Диск Yukiyasha
 

@@ -1,24 +1,44 @@
-"""Примавтодор: a work-project module (skeleton).
+"""Примавтодор: a work-project module.
 
-The module owns one folder on Yukiyasha Disk, ``projects/work/Примавтодор``, which shows up in
-the "Рабочие" section of the UI. It only depends on the disk module, never on the web layer.
-Domain features (documents, notes, search) are added on top of this skeleton later.
+The module owns the folder ``projects/work/Примавтодор`` on Yukiyasha Disk and one sub-folder per
+section (timesheet, employees, garage, fuel, contracts, ...). It depends only on the disk
+module, never on the web layer, and talks to the disk exclusively through its public API.
 """
 
 from yukiyasha.modules.disk import DiskModule
 from yukiyasha.modules.manifest import ModuleManifest
+from yukiyasha.modules.primavtodor.sections import (
+    GROUP_TITLES,
+    PRIMAVTODOR_DIR,
+    SECTIONS,
+    SECTIONS_BY_ID,
+    Section,
+)
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.version import get_version
-
-PRIMAVTODOR_DIR = "projects/work/Примавтодор"
 
 PRIMAVTODOR_MANIFEST = ModuleManifest(
     module_id="primavtodor",
     name="Примавтодор",
     version=get_version(),
-    description="Рабочий проект «Примавтодор»: папка и данные проекта на Диске Yukiyasha.",
-    permissions=("disk.read", "disk.write"),
+    description=(
+        "Рабочий проект «Примавтодор»: табель, сотрудники, гараж, ГСМ, договора, "
+        "счета-оферты, служебные записки, приказы и распоряжения на Диске Yukiyasha."
+    ),
+    permissions=("disk.read", "disk.write", "disk.delete"),
 )
+
+
+class PrimavtodorError(Exception):
+    """Base class for expected module-level errors."""
+
+
+class UnknownSectionError(PrimavtodorError):
+    """Raised when a section id does not exist."""
+
+
+class InvalidDocumentNameError(PrimavtodorError):
+    """Raised when a document name is not a single, plain file name."""
 
 
 class PrimavtodorModule:
@@ -38,9 +58,18 @@ class PrimavtodorModule:
         """Project folder, relative to the disk root."""
         return PRIMAVTODOR_DIR
 
+    @property
+    def sections(self) -> tuple[Section, ...]:
+        return SECTIONS
+
+    # ----- lifecycle -----
+
     def start(self) -> None:
-        # Needs a READY disk (registered before this module); recreated if the user deleted it.
+        # Needs a READY disk (registered before this module). Folders that the user deleted
+        # are recreated; existing folders and their files are never touched.
         self._disk.make_dir(PRIMAVTODOR_DIR)
+        for section in SECTIONS:
+            self._disk.make_dir(section.path)
         self._last_error = None
         self._state = ModuleState.READY
 
@@ -55,6 +84,7 @@ class PrimavtodorModule:
         health: dict[str, object] = {
             "status": "ok" if self.state is ModuleState.READY else self.state.value,
             "directory": self.directory,
+            "sections": len(SECTIONS),
         }
         if self._last_error:
             health["error"] = self._last_error
@@ -63,3 +93,50 @@ class PrimavtodorModule:
             "state": self.state.value,
             "health": health,
         }
+
+    # ----- sections and documents (all data lives on the disk) -----
+
+    def section(self, section_id: str) -> Section:
+        try:
+            return SECTIONS_BY_ID[section_id]
+        except KeyError as exc:
+            raise UnknownSectionError(f"Unknown section: {section_id}") from exc
+
+    def section_summaries(self) -> list[dict[str, object]]:
+        """All sections with the number of entries currently stored in each folder."""
+        return [
+            {
+                "id": section.id,
+                "title": section.title,
+                "description": section.description,
+                "group": section.group,
+                "group_title": GROUP_TITLES[section.group],
+                "path": section.path,
+                "count": len(self._disk.list_entries(section.path)),
+            }
+            for section in SECTIONS
+        ]
+
+    def list_documents(self, section_id: str) -> list[dict[str, object]]:
+        return self._disk.list_entries(self.section(section_id).path)
+
+    def read_document(self, section_id: str, name: str) -> str:
+        return self._disk.read_text(self._document_path(section_id, name))
+
+    def write_document(
+        self, section_id: str, name: str, content: str, *, overwrite: bool = True
+    ) -> str:
+        """Store a text document and return its disk path."""
+        path = self._document_path(section_id, name)
+        self._disk.write_text(path, content, overwrite=overwrite)
+        return path
+
+    def delete_document(self, section_id: str, name: str) -> None:
+        self._disk.delete(self._document_path(section_id, name))
+
+    def _document_path(self, section_id: str, name: str) -> str:
+        section = self.section(section_id)
+        clean = name.strip()
+        if not clean or clean in {".", ".."} or "/" in clean or "\\" in clean:
+            raise InvalidDocumentNameError("Document name must be a single file name")
+        return f"{section.path}/{clean}"

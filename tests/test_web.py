@@ -269,6 +269,8 @@ def test_workspace_ui_markup_contract(client: TestClient) -> None:
         "btn-new",
         "crumbs",
         "modules",
+        "view-module",
+        "module-groups",
         "dlg-new",
         "dlg-confirm",
     ):
@@ -280,7 +282,14 @@ def test_workspace_ui_uses_only_existing_api_routes(client: TestClient) -> None:
     script = client.get("/static/app.js").text
     routes = {route.path for route in client.app.routes}
 
-    for endpoint in ("/api/disk", "/api/disk/file", "/api/runtime", "/api/modules"):
+    endpoints = (
+        "/api/disk",
+        "/api/disk/file",
+        "/api/runtime",
+        "/api/modules",
+        "/api/primavtodor/sections",
+    )
+    for endpoint in endpoints:
         assert endpoint in routes
         assert f'"{endpoint}"' in script
 
@@ -373,3 +382,40 @@ def test_primavtodor_module_is_listed_and_its_folder_is_in_the_work_section(
     entries = client.get("/api/disk", params={"path": "projects/work"}).json()["entries"]
     assert {"name": "Примавтодор", "path": "projects/work/Примавтодор", "type": "directory",
             "size": 0} in entries
+
+
+def test_primavtodor_sections_endpoint_counts_documents_on_the_disk(client: TestClient) -> None:
+    response = client.get("/api/primavtodor/sections")
+
+    assert response.status_code == 200
+    sections = response.json()
+    assert [item["title"] for item in sections] == [
+        "Табель",
+        "Сотрудники",
+        "Гараж",
+        "Горюче-смазочные материалы",
+        "Договора",
+        "Счёт-оферта",
+        "Служебные записки",
+        "Приказы",
+        "Распоряжения",
+    ]
+    assert all(item["count"] == 0 for item in sections)
+
+    # A file written through the generic disk API is visible in the section's count.
+    path = "projects/work/Примавтодор/Приказы/приказ-1.md"
+    assert client.put("/api/disk/file", json={"path": path, "content": "x"}).status_code == 200
+    orders = next(item for item in client.get("/api/primavtodor/sections").json()
+                  if item["id"] == "orders")
+    assert orders["count"] == 1
+    assert orders["path"] == "projects/work/Примавтодор/Приказы"
+
+
+def test_primavtodor_sections_endpoint_is_503_when_the_module_is_not_ready(
+    client: TestClient,
+) -> None:
+    client.app.state.runtime.primavtodor.stop()
+
+    response = client.get("/api/primavtodor/sections")
+
+    assert response.status_code == 503

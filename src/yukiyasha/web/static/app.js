@@ -10,6 +10,7 @@ const {
   baseName,
   joinPath,
   sectionFor,
+  navFor,
   routeToHash,
   parseHash,
 } = window.YukiUtil;
@@ -22,12 +23,17 @@ const SECTIONS = {
   "": "Весь диск",
 };
 const STATUS_POLL_MS = 20_000;
+const MODULE_DIRS = { primavtodor: "projects/work/Примавтодор" };
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
   main: $("#main"),
   viewFiles: $("#view-files"),
   viewSystem: $("#view-system"),
+  viewModule: $("#view-module"),
+  moduleGroups: $("#module-groups"),
+  btnModuleRefresh: $("#btn-module-refresh"),
+  btnModuleOpen: $("#btn-module-open"),
   navItems: document.querySelectorAll(".nav-item"),
   status: $("#status"),
   crumbs: $("#crumbs"),
@@ -74,6 +80,7 @@ const state = {
   entries: [],
   file: null, // { path, original }
   listController: null,
+  moduleController: null,
   fileController: null,
   lastHash: "",
 };
@@ -123,6 +130,9 @@ function describeError(error) {
   if (error instanceof ApiError) {
     if (typeof error.detail === "string") {
       if (error.detail.startsWith("Yukiyasha Disk is not ready")) return "Диск ещё не готов";
+      if (error.detail.startsWith("Primavtodor module is not ready")) {
+        return "Модуль Примавтодор ещё не готов";
+      }
       return KNOWN_ERRORS[error.detail] ?? error.detail;
     }
     if (error.status === 422) return "Некорректные данные запроса";
@@ -227,8 +237,8 @@ function navigate(route) {
 
 async function applyRoute(route) {
   const sameFile = route.file && state.file && route.file === state.file.path;
-  // Opening the system page keeps the editor (and its text) alive, so nothing is lost yet.
-  if (isDirty() && !sameFile && !route.system) {
+  // The system and module pages keep the editor (and its text) alive, so nothing is lost yet.
+  if (isDirty() && !sameFile && !route.system && !route.module) {
     const discard = await askConfirm({
       title: "Есть несохранённые изменения",
       text: `Изменения в «${baseName(state.file.path)}» будут потеряны.`,
@@ -248,9 +258,20 @@ async function applyRoute(route) {
     return;
   }
 
+  if (route.module) {
+    if (!(route.module in MODULE_DIRS)) {
+      navigate({ dir: "projects/work" });
+      return;
+    }
+    showView("module");
+    updateNav(`module:${route.module}`);
+    await loadModule();
+    return;
+  }
+
   showView("files");
   if (sameFile) {
-    updateNav(sectionFor(state.dir));
+    updateNav(navFor(state.dir, MODULE_DIRS));
     renderCrumbs();
     return;
   }
@@ -262,7 +283,7 @@ async function applyRoute(route) {
     els.filter.value = "";
   }
   state.dir = dir;
-  updateNav(sectionFor(dir));
+  updateNav(navFor(dir, MODULE_DIRS));
   renderCrumbs();
 
   if (route.file) {
@@ -279,19 +300,27 @@ function showView(view) {
   state.view = view;
   els.viewFiles.hidden = view !== "files";
   els.viewSystem.hidden = view !== "system";
+  els.viewModule.hidden = view !== "module";
 }
 
 function updateNav(section) {
   els.navItems.forEach((item) => {
-    if (item.dataset.section === section) item.setAttribute("aria-current", "page");
-    else item.removeAttribute("aria-current");
+    if (item.dataset.section === section) {
+      item.setAttribute("aria-current", "page");
+      // On phones the nav strip scrolls horizontally; keep the active item visible.
+      item.scrollIntoView({ block: "nearest", inline: "nearest" });
+    } else {
+      item.removeAttribute("aria-current");
+    }
   });
 }
 
 els.navItems.forEach((item) => {
   item.addEventListener("click", () => {
     const section = item.dataset.section;
-    navigate(section === "system" ? { system: true } : { dir: section });
+    if (section === "system") navigate({ system: true });
+    else if (section.startsWith("module:")) navigate({ module: section.slice("module:".length) });
+    else navigate({ dir: section });
   });
 });
 
@@ -623,6 +652,91 @@ els.formNew.addEventListener("submit", async (event) => {
     els.newSubmit.disabled = false;
   }
 });
+
+/* ---------- module page ---------- */
+
+function renderModuleSections(sections) {
+  const groups = new Map();
+  for (const section of sections) {
+    if (!groups.has(section.group)) groups.set(section.group, { title: section.group_title, items: [] });
+    groups.get(section.group).items.push(section);
+  }
+
+  els.moduleGroups.replaceChildren(
+    ...[...groups.values()].map((group) => {
+      const wrapper = document.createElement("section");
+      wrapper.className = "module-group";
+
+      const heading = document.createElement("h2");
+      heading.className = "section-title";
+      heading.textContent = group.title;
+
+      const grid = document.createElement("div");
+      grid.className = "section-grid";
+      grid.append(
+        ...group.items.map((section) => {
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = "section-card";
+
+          const title = document.createElement("span");
+          title.className = "card-title";
+          title.append(icon("i-folder"), section.title);
+
+          const description = document.createElement("span");
+          description.className = "card-desc";
+          description.textContent = section.description;
+
+          const count = document.createElement("span");
+          count.className = `card-count${section.count ? " filled" : ""}`;
+          count.textContent = section.count
+            ? `${section.count} ${plural(section.count, "объект", "объекта", "объектов")}`
+            : "пусто";
+
+          card.append(title, description, count);
+          card.addEventListener("click", () => navigate({ dir: section.path }));
+          return card;
+        }),
+      );
+
+      wrapper.append(heading, grid);
+      return wrapper;
+    }),
+  );
+}
+
+function showModuleError(message) {
+  const box = document.createElement("div");
+  box.className = "module-error";
+  const strong = document.createElement("strong");
+  strong.textContent = "Не удалось загрузить разделы";
+  const text = document.createElement("span");
+  text.textContent = message;
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = "btn";
+  retry.textContent = "Повторить";
+  retry.addEventListener("click", () => void loadModule());
+  box.append(strong, document.createElement("br"), text, document.createElement("br"), retry);
+  els.moduleGroups.replaceChildren(box);
+}
+
+async function loadModule() {
+  state.moduleController?.abort();
+  const controller = new AbortController();
+  state.moduleController = controller;
+  try {
+    const sections = await api("GET", "/api/primavtodor/sections", { signal: controller.signal });
+    if (controller.signal.aborted) return;
+    renderModuleSections(sections);
+  } catch (error) {
+    if (isAbort(error)) return;
+    showModuleError(describeError(error));
+  }
+}
+
+els.btnModuleRefresh.addEventListener("click", () => void loadModule());
+els.btnModuleOpen.addEventListener("click", () => navigate({ dir: MODULE_DIRS.primavtodor }));
 
 /* ---------- system ---------- */
 

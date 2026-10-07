@@ -52,6 +52,7 @@
 
   function routeToHash(route) {
     if (route.system) return "#system";
+    if (route.module) return `#m=${encodeURIComponent(route.module)}`;
     if (route.file) return `#f=${encodeURIComponent(route.file)}`;
     return `#d=${encodeURIComponent(route.dir ?? "")}`;
   }
@@ -60,12 +61,25 @@
     const raw = hash.replace(/^#/, "");
     if (raw === "system") return { system: true };
     const params = new URLSearchParams(raw.replace(/\+/g, "%2B"));
+    if (params.has("m")) return { module: params.get("m") };
     if (params.has("f")) return { file: params.get("f") };
     if (params.has("d")) return { dir: params.get("d") };
     return { dir: "projects/work" };
   }
 
+  /**
+   * Which sidebar item is active for a directory. Everything inside the module's folder
+   * belongs to the module; other paths follow their project section.
+   */
+  function navFor(path, moduleDirs) {
+    for (const [moduleId, dir] of Object.entries(moduleDirs)) {
+      if (path === dir || path.startsWith(`${dir}/`)) return `module:${moduleId}`;
+    }
+    return sectionFor(path);
+  }
+
   return {
+    navFor,
     plural,
     formatSize,
     byteLength,

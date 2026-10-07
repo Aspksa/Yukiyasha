@@ -38,6 +38,14 @@ class PrimavtodorReadAccess(_PrimavtodorAccess):
         self._check("primavtodor.read")
         return self._module.settings.load()
 
+    def list_documents(self, section_id: str, *, limit: int = 10) -> list[dict[str, object]]:
+        self._check("primavtodor.read")
+        return self._module.document_summaries(section_id, limit=limit)
+
+    def read_document(self, section_id: str, name: str) -> dict[str, object]:
+        self._check("primavtodor.read")
+        return self._module.document_preview(section_id, name)
+
 
 class PrimavtodorWriteAccess(_PrimavtodorAccess):
     """Mutation surface reserved for the proposal executor, never the AI module."""

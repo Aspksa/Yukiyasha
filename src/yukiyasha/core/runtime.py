@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from yukiyasha.config import Settings
 from yukiyasha.modules import ModuleRegistry
+from yukiyasha.modules.ai import AiModule
 from yukiyasha.modules.disk import DiskModule
 from yukiyasha.modules.primavtodor import PrimavtodorModule
 
@@ -47,6 +48,8 @@ class YukiyashaRuntime:
         # Registered after the disk it depends on: modules start in order, stop in reverse.
         self.primavtodor = PrimavtodorModule(self.disk)
         self.modules.register(self.primavtodor)
+        self.ai = AiModule(self.disk, self.settings.ai)
+        self.modules.register(self.ai)
 
     @property
     def state(self) -> RuntimeState:

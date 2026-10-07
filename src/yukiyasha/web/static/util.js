@@ -83,6 +83,7 @@
 
   function routeToHash(route) {
     if (route.system) return "#system";
+    if (route.ai) return route.chat ? `#ai=${encodeURIComponent(route.chat)}` : "#ai";
     if (route.module) {
       const section = route.section ? `&s=${encodeURIComponent(route.section)}` : "";
       return `#m=${encodeURIComponent(route.module)}${section}`;
@@ -94,7 +95,9 @@
   function parseHash(hash) {
     const raw = hash.replace(/^#/, "");
     if (raw === "system") return { system: true };
+    if (raw === "ai") return { ai: true };
     const params = new URLSearchParams(raw.replace(/\+/g, "%2B"));
+    if (params.has("ai")) return { ai: true, chat: params.get("ai") };
     if (params.has("m")) {
       const route = { module: params.get("m") };
       if (params.has("s")) route.section = params.get("s");

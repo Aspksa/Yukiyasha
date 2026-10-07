@@ -33,6 +33,7 @@ const els = {
   viewModule: $("#view-module"),
   viewEntity: $("#view-entity"),
   viewTimesheet: $("#view-timesheet"),
+  viewAi: $("#view-ai"),
   moduleGroups: $("#module-groups"),
   btnModuleRefresh: $("#btn-module-refresh"),
   btnModuleOpen: $("#btn-module-open"),
@@ -264,8 +265,9 @@ function navigate(route) {
 
 async function applyRoute(route) {
   const sameFile = route.file && state.file && route.file === state.file.path;
-  // The system and module pages keep the editor (and its text) alive, so nothing is lost yet.
-  if (isDirty() && !sameFile && !route.system && !route.module) {
+  // The system, module and assistant pages keep the editor (and its text) alive, so nothing is
+  // lost yet.
+  if (isDirty() && !sameFile && !route.system && !route.module && !route.ai) {
     const discard = await askConfirm({
       title: "Есть несохранённые изменения",
       text: `Изменения в «${baseName(state.file.path)}» будут потеряны.`,
@@ -282,6 +284,13 @@ async function applyRoute(route) {
     showView("system");
     updateNav("system");
     await loadSystem();
+    return;
+  }
+
+  if (route.ai) {
+    showView("ai");
+    updateNav("ai");
+    await openAi(route.chat);
     return;
   }
 
@@ -336,6 +345,7 @@ function showView(view) {
   els.viewModule.hidden = view !== "module";
   els.viewEntity.hidden = view !== "entity";
   els.viewTimesheet.hidden = view !== "timesheet";
+  els.viewAi.hidden = view !== "ai";
 }
 
 function updateNav(section) {
@@ -354,6 +364,7 @@ els.navItems.forEach((item) => {
   item.addEventListener("click", () => {
     const section = item.dataset.section;
     if (section === "system") navigate({ system: true });
+    else if (section === "ai") navigate({ ai: true });
     else if (section.startsWith("module:")) navigate({ module: section.slice("module:".length) });
     else navigate({ dir: section });
   });

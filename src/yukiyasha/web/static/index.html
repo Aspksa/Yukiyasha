@@ -31,6 +31,7 @@
     <symbol id="i-sec-directives" viewBox="0 0 24 24"><path d="M4 10v4h3l7 4V6l-7 4H4Z" fill="currentColor" fill-opacity=".16" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><path d="M17 9.3a3.7 3.7 0 0 1 0 5.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><path d="M7 14l1 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="1.6"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
     <symbol id="i-snow" viewBox="0 0 24 24"><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M9.5 4.5 12 6.5l2.5-2M9.5 19.5 12 17.5l2.5 2M3.5 9.8l3.2.2-.8-3M20.5 14.2l-3.2-.2.8 3M3.5 14.2l3.2-.2-.8 3M20.5 9.8l-3.2.2.8-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 4v-4h0A2.5 2.5 0 0 1 4 13.5v-7Z" fill="currentColor" fill-opacity=".16" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8.5 9.5h7M8.5 12.5h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2m-8 0 1 12h10l1-12M10 11v5m4-5v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -68,6 +69,10 @@
         <button class="nav-item" type="button" data-section="">
           <svg class="icon" aria-hidden="true"><use href="#i-disk"/></svg>
           <span><strong>Весь диск</strong><small>Корень хранилища</small></span>
+        </button>
+        <button class="nav-item" type="button" data-section="ai">
+          <svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg>
+          <span><strong>Помощник</strong><small>Личный ИИ</small></span>
         </button>
         <button class="nav-item" type="button" data-section="system">
           <svg class="icon" aria-hidden="true"><use href="#i-system"/></svg>
@@ -246,6 +251,42 @@
         <div class="empty" id="ts-empty" hidden></div>
       </section>
 
+      <section id="view-ai" class="ai-page" aria-label="Помощник" hidden>
+        <header class="page-head">
+          <div class="entity-heading">
+            <span class="sec-tile" data-sec="ai"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg></span>
+            <div>
+              <p class="eyebrow">Личный ИИ</p>
+              <h1 id="ai-title">Помощник</h1>
+            </div>
+          </div>
+          <div class="head-actions">
+            <button class="btn" id="ai-persona-btn" type="button">Личность</button>
+            <button class="btn btn-primary" id="ai-new" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
+              <span>Новый диалог</span>
+            </button>
+          </div>
+        </header>
+        <div class="notice" id="ai-banner" hidden></div>
+        <div class="ai-layout">
+          <aside class="pane ai-chats" aria-label="Диалоги">
+            <ul class="ai-chat-list" id="ai-chat-list"></ul>
+            <div class="empty" id="ai-chats-empty" hidden>Диалогов пока нет.</div>
+          </aside>
+          <section class="pane ai-chat" aria-label="Диалог">
+            <div class="ai-messages" id="ai-messages" role="log" aria-live="polite"></div>
+            <p class="ai-error" id="ai-error" role="alert" hidden></p>
+            <form class="ai-form" id="ai-form">
+              <label class="sr-only" for="ai-input">Сообщение</label>
+              <textarea id="ai-input" rows="2" maxlength="8000" placeholder="Сообщение… (Enter — отправить)"></textarea>
+              <button class="btn btn-primary" id="ai-send" type="submit">Отправить</button>
+            </form>
+            <p class="ai-privacy" id="ai-privacy"></p>
+          </section>
+        </div>
+      </section>
+
       <section id="view-system" class="system" aria-label="Система" hidden>
         <header class="page-head">
           <div>
@@ -322,6 +363,19 @@
     </form>
   </dialog>
 
+  <dialog id="dlg-persona" class="dlg-wide" aria-labelledby="dlg-persona-title">
+    <form method="dialog" id="form-persona">
+      <h2 id="dlg-persona-title">Личность помощника</h2>
+      <p class="dlg-note">Это обычный файл <code>ai/persona.md</code> на Диске. Здесь вы задаёте, кто помощник и как он отвечает; изменения действуют со следующего сообщения.</p>
+      <div class="field"><label class="sr-only" for="persona-text">Описание личности</label><textarea id="persona-text" rows="12" spellcheck="false"></textarea></div>
+      <p class="dlg-error" id="persona-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit" id="persona-save">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="dlg-confirm" aria-labelledby="dlg-confirm-title">
     <form method="dialog" id="form-confirm">
       <h2 id="dlg-confirm-title">Подтверждение</h2>
@@ -337,6 +391,7 @@
 
   <script src="/static/util.js" defer></script>
   <script src="/static/primavtodor.js" defer></script>
+  <script src="/static/ai.js" defer></script>
   <script src="/static/app.js" defer></script>
 </body>
 </html>

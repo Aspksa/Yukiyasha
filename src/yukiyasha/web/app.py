@@ -1,6 +1,7 @@
 """FastAPI entry point for Yukiyasha."""
 
-from collections.abc import Callable
+import json
+from collections.abc import Callable, Iterator
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
@@ -8,13 +9,23 @@ from typing import Annotated, Any, TypeVar
 from urllib.parse import urlsplit
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from yukiyasha.config import Settings
 from yukiyasha.core import YukiyashaRuntime
+from yukiyasha.modules.ai import (
+    AiBusyError,
+    AiError,
+    AiNotConfiguredError,
+    ChatTurn,
+    ConversationNotFoundError,
+    MessageRejectedError,
+    ProviderError,
+)
 from yukiyasha.modules.disk import (
     DiskConflictError,
     DiskEncodingError,
@@ -44,6 +55,15 @@ class DiskWriteRequest(BaseModel):
     path: str
     content: str
     overwrite: bool = True
+
+
+class ChatRequest(BaseModel):
+    message: str
+    conversation_id: str | None = None
+
+
+class PersonaRequest(BaseModel):
+    text: str
 
 
 class SeasonRequest(BaseModel):
@@ -99,6 +119,39 @@ def primavtodor_http_error(exc: PrimavtodorError | DiskError) -> HTTPException:
     if isinstance(exc, DiskError):
         return disk_http_error(exc)
     return HTTPException(status_code=400, detail=str(exc))
+
+
+def ai_http_error(exc: AiError | DiskError) -> HTTPException:
+    """Map an AI-module (or underlying disk) error to one consistent HTTP status."""
+    if isinstance(exc, DiskError):
+        return disk_http_error(exc)
+    detail: dict[str, object] = {"message": exc.message}
+    if isinstance(exc, ConversationNotFoundError):
+        return HTTPException(status_code=404, detail=detail)
+    if isinstance(exc, MessageRejectedError):
+        return HTTPException(status_code=422, detail=detail)
+    if isinstance(exc, AiNotConfiguredError):
+        return HTTPException(status_code=503, detail={**detail, "code": "not_configured"})
+    if isinstance(exc, AiBusyError):
+        return HTTPException(status_code=429, detail=detail)
+    if isinstance(exc, ProviderError):
+        return HTTPException(status_code=502, detail={**detail, "provider_status": exc.status})
+    return HTTPException(status_code=400, detail=detail)
+
+
+def _sse(event: dict[str, object]) -> str:
+    return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+def _chat_events(turn: ChatTurn) -> Iterator[str]:
+    """Server-sent events of one answer; a mid-stream failure becomes an ``error`` event."""
+    try:
+        for event in turn.events():
+            yield _sse(event)
+    except AiError as exc:
+        yield _sse({"type": "error", "message": exc.message})
+    except Exception:  # never leak internals (or a key) to the browser
+        yield _sse({"type": "error", "message": "Неожиданная ошибка при получении ответа"})
 
 
 def create_app(
@@ -187,6 +240,51 @@ def create_app(
             return action()
         except (PrimavtodorError, DiskError) as exc:
             raise primavtodor_http_error(exc) from exc
+
+    def ai_call(action: Callable[[], T]) -> T:
+        if runtime.ai.state is not ModuleState.READY:
+            raise HTTPException(status_code=503, detail={"message": "Помощник не запущен"})
+        try:
+            return action()
+        except (AiError, DiskError) as exc:
+            raise ai_http_error(exc) from exc
+
+    @application.get("/api/ai/status")
+    def ai_status() -> dict[str, object]:
+        return runtime.ai.status()
+
+    @application.get("/api/ai/persona")
+    def ai_persona() -> dict[str, str]:
+        return {"text": ai_call(runtime.ai.persona)}
+
+    @application.put("/api/ai/persona")
+    def ai_set_persona(request: PersonaRequest) -> dict[str, str]:
+        ai_call(lambda: runtime.ai.set_persona(request.text))
+        return {"status": "ok"}
+
+    @application.get("/api/ai/conversations")
+    def ai_conversations() -> dict[str, object]:
+        return {"conversations": ai_call(runtime.ai.list_chats)}
+
+    @application.get("/api/ai/conversations/{chat_id}")
+    def ai_conversation(chat_id: str) -> dict[str, object]:
+        return ai_call(lambda: runtime.ai.get_chat(chat_id))
+
+    @application.delete("/api/ai/conversations/{chat_id}")
+    def ai_delete_conversation(chat_id: str) -> dict[str, str]:
+        ai_call(lambda: runtime.ai.delete_chat(chat_id))
+        return {"status": "ok", "id": chat_id}
+
+    @application.post("/api/ai/chat")
+    def ai_chat(request: ChatRequest) -> StreamingResponse:
+        """Stream the answer as server-sent events: meta, delta..., done (or error)."""
+        turn = ai_call(lambda: runtime.ai.begin_chat(request.conversation_id, request.message))
+        return StreamingResponse(
+            _chat_events(turn),
+            media_type="text/event-stream",
+            headers={"X-Accel-Buffering": "no"},
+            background=BackgroundTask(turn.release),
+        )
 
     @application.get("/api/primavtodor/schema")
     def primavtodor_schema() -> dict[str, object]:

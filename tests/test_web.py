@@ -312,7 +312,8 @@ def test_disk_api_rejects_foreign_origin(client: TestClient, origin: str) -> Non
     )
 
     assert response.status_code == 403
-    assert client.get("/api/disk", params={"path": ""}).json()["entries"][0]["name"] == "projects"
+    names = [e["name"] for e in client.get("/api/disk", params={"path": ""}).json()["entries"]]
+    assert "x.txt" not in names  # the rejected request wrote nothing
 
 
 def test_disk_api_accepts_same_origin(client: TestClient) -> None:
@@ -577,6 +578,7 @@ def test_every_element_id_used_by_the_scripts_exists_in_the_page(client: TestCli
         "primavtodor.js": set(
             re.findall(r'pvById\("([\w-]+)"\)', client.get("/static/primavtodor.js").text)
         ),
+        "ai.js": set(re.findall(r'aiById\("([\w-]+)"\)', client.get("/static/ai.js").text)),
     }
 
     # Form inputs are generated from the schema as "f-<field>"; they must name a real field.
@@ -596,7 +598,8 @@ def test_primavtodor_script_is_served_before_app_js(client: TestClient) -> None:
     html = client.get("/").text
 
     assert html.index("/static/util.js") < html.index("/static/primavtodor.js")
-    assert html.index("/static/primavtodor.js") < html.index("/static/app.js")
+    assert html.index("/static/primavtodor.js") < html.index("/static/ai.js")
+    assert html.index("/static/ai.js") < html.index("/static/app.js")
 
 
 def test_primavtodor_schema_carries_section_paths(client: TestClient) -> None:
@@ -645,3 +648,178 @@ def test_season_switch_validation_and_origin(client: TestClient) -> None:
     assert bad.status_code == 422 and "season" in bad.json()["detail"]["fields"]
     assert evil.status_code == 403
     assert client.get(f"{BASE}/settings").json()["source"] == "calendar"  # nothing was stored
+
+
+# ----- AI assistant over HTTP -----
+
+AI_SECRET = "sk-web-SECRET-456"
+
+
+@pytest.fixture
+def ai_client(tmp_path: Path):
+    from tests.fake_provider import FakeProvider
+    from yukiyasha.config import AiSettings
+
+    with FakeProvider(chunks=["Здравствуйте", ", ", "Господин"]) as provider:
+        settings = Settings(
+            disk_dir=tmp_path / "disk",
+            ai=AiSettings(base_url=provider.base_url, model="test-model", api_key=AI_SECRET),
+        )
+        with TestClient(create_app(settings), base_url="http://127.0.0.1:8000") as test_client:
+            test_client.provider = provider
+            yield test_client
+
+
+def _sse_events(response) -> list[dict]:
+    import json
+
+    return [
+        json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")
+    ]
+
+
+def test_ai_status_without_a_key_explains_what_to_do(client: TestClient) -> None:
+    status = client.get("/api/ai/status").json()
+
+    assert status["configured"] is False and "не настроен" in status["problem"]
+    assert status["persona_path"] == "ai/persona.md"
+    response = client.post("/api/ai/chat", json={"message": "привет"})
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "not_configured"
+
+
+def test_ai_chat_streams_events_and_saves_the_conversation(ai_client: TestClient) -> None:
+    response = ai_client.post("/api/ai/chat", json={"message": "Привет"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["cache-control"] == "no-store"
+    events = _sse_events(response)
+    assert [e["type"] for e in events] == ["meta", "delta", "delta", "delta", "done"]
+    chat_id = events[0]["conversation_id"]
+
+    listing = ai_client.get("/api/ai/conversations").json()["conversations"]
+    assert [c["id"] for c in listing] == [chat_id] and listing[0]["title"] == "Привет"
+    chat = ai_client.get(f"/api/ai/conversations/{chat_id}").json()
+    assert chat["messages"][1]["content"] == "Здравствуйте, Господин"
+
+    # a follow-up in the same conversation
+    again = _sse_events(
+        ai_client.post("/api/ai/chat", json={"message": "ещё", "conversation_id": chat_id})
+    )
+    assert again[-1]["type"] == "done"
+    assert len(ai_client.get(f"/api/ai/conversations/{chat_id}").json()["messages"]) == 4
+
+    # the chat is a real file on the disk
+    files = ai_client.get("/api/disk", params={"path": "ai/chats"}).json()["entries"]
+    assert [f["name"] for f in files] == [f"{chat_id}.json"]
+    assert ai_client.delete(f"/api/ai/conversations/{chat_id}").status_code == 200
+    assert ai_client.get(f"/api/ai/conversations/{chat_id}").status_code == 404
+
+
+def test_ai_key_never_appears_in_any_response(ai_client: TestClient) -> None:
+    ai_client.post("/api/ai/chat", json={"message": "Привет"})
+    texts = [
+        ai_client.get("/api/ai/status").text,
+        ai_client.get("/api/modules").text,
+        ai_client.get("/api/ai/conversations").text,
+        ai_client.get("/api/ai/persona").text,
+        ai_client.get("/openapi.json").text,
+        ai_client.get("/api/runtime").text,
+    ]
+
+    assert all(AI_SECRET not in text for text in texts)
+    assert ai_client.provider.requests[0]["auth"] == f"Bearer {AI_SECRET}"  # but it is sent
+
+
+def test_ai_errors_have_clear_statuses(ai_client: TestClient) -> None:
+    assert ai_client.post("/api/ai/chat", json={"message": "   "}).status_code == 422
+    assert ai_client.post("/api/ai/chat", json={"message": "x" * 9000}).status_code == 422
+    missing = ai_client.post("/api/ai/chat",
+                             json={"message": "привет", "conversation_id": "chat-00000000"})
+    assert missing.status_code == 404
+    assert ai_client.get("/api/ai/conversations/..%2F..%2Fx").status_code == 404
+    assert ai_client.post("/api/ai/chat", json={}).status_code == 422  # pydantic: no message
+
+    ai_client.provider.status = 401
+    rejected = ai_client.post("/api/ai/chat", json={"message": "привет"})
+    assert rejected.status_code == 502
+    assert "отклонил ключ" in rejected.json()["detail"]["message"]
+    assert AI_SECRET not in rejected.text
+    assert ai_client.get("/api/ai/conversations").json()["conversations"] == []
+
+
+def test_ai_persona_roundtrip_over_http(ai_client: TestClient) -> None:
+    assert "Помощник" in ai_client.get("/api/ai/persona").json()["text"]
+
+    assert ai_client.put("/api/ai/persona", json={"text": "Ты — Саюри."}).status_code == 200
+    assert ai_client.put("/api/ai/persona", json={"text": "  "}).status_code == 422
+
+    assert ai_client.get("/api/ai/persona").json()["text"].strip() == "Ты — Саюри."
+    ai_client.post("/api/ai/chat", json={"message": "Привет"})
+    sent = ai_client.provider.requests[-1]["body"]["messages"][0]
+    assert sent == {"role": "system", "content": "Ты — Саюри.\n"}
+
+
+def test_ai_changes_reject_foreign_origins(ai_client: TestClient) -> None:
+    evil = {"Origin": "http://evil.example"}
+
+    chat = ai_client.post("/api/ai/chat", json={"message": "привет"}, headers=evil)
+    persona = ai_client.put("/api/ai/persona", json={"text": "взлом"}, headers=evil)
+    removed = ai_client.delete("/api/ai/conversations/chat-00000000", headers=evil)
+
+    assert chat.status_code == persona.status_code == removed.status_code == 403
+    assert not ai_client.provider.requests  # the provider was never called (no cost, no leak)
+    assert "взлом" not in ai_client.get("/api/ai/persona").json()["text"]
+
+
+def test_body_limit_hands_the_connection_back_after_the_body_is_read() -> None:
+    """A streaming response waits for ``http.disconnect`` after the request body is consumed.
+
+    The middleware used to answer that wait with an endless stream of empty request messages,
+    which starved the event loop and froze every streamed POST response (e.g. the AI chat).
+    """
+    calls = {"after_body": 0}
+    disconnect = {"type": "http.disconnect"}
+
+    async def real_receive() -> dict[str, object]:
+        calls["after_body"] += 1
+        return disconnect
+
+    queue = [{"type": "http.request", "body": b"{}", "more_body": False}]
+
+    async def receive() -> dict[str, object]:
+        return queue.pop(0) if queue else await real_receive()
+
+    async def downstream(scope, receive, send) -> None:
+        assert (await receive())["type"] == "http.request"  # the buffered body
+        assert (await receive()) == disconnect  # then the *real* receive, not a fake body
+        assert (await receive()) == disconnect
+
+    async def send(message: dict[str, object]) -> None:  # pragma: no cover - unused
+        raise AssertionError("nothing should be sent")
+
+    scope = {"type": "http", "method": "POST", "path": "/api/ai/chat", "headers": []}
+
+    asyncio.run(RequestBodyLimitMiddleware(downstream, max_bytes=100)(scope, receive, send))
+
+    assert calls["after_body"] == 2
+
+
+def test_a_streamed_post_response_completes_through_the_middleware(
+    tmp_path: Path,
+) -> None:
+    """End to end: a POST that streams its answer must finish (no event-loop starvation)."""
+    from fastapi.responses import StreamingResponse
+
+    app = create_app(Settings(disk_dir=tmp_path / "disk"))
+
+    @app.post("/api/test-stream")
+    def stream() -> StreamingResponse:
+        return StreamingResponse(iter(["data: 1\n\n", "data: 2\n\n"]),
+                                 media_type="text/event-stream")
+
+    with TestClient(app, base_url="http://127.0.0.1:8000") as test_client:
+        response = test_client.post("/api/test-stream", json={})
+
+    assert response.text == "data: 1\n\ndata: 2\n\n"

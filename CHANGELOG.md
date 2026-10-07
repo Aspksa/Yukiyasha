@@ -5,6 +5,41 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- **Cars and cards move between drivers, the history is kept in the employee.** Change a
+  driver's car or fuel card at any time (today the Hino, tomorrow the Lexus; a lost card is
+  detached and another attached) with an optional *Смена … действует с* date; the employee shows
+  the history of cars and cards. A statement fill-up is matched to the card holder *of that day*
+  and to the car the driver had *that day*, so a change never rewrites the past. Existing
+  employees keep working as before (one open interval).
+- **Manual fill-ups:** *Оплата*: by fuel card (default), cash, or without a card. Cash and
+  card-less fill-ups need no card and no driver, only a car; they count for the car in the month's
+  calculations and are never mistaken for card operations of a statement.
+- **The remainder stays with the car.** The fuel left after a car's last closed waybill is shown on
+  the vehicle and becomes the starting remainder of the next waybill of that car, whoever drives
+  (carried over by the server when the field is empty, and filled in by the form).
+- **Diesel and petrol are never added together**: the calculations are totalled per fuel kind
+  (diesel, petrol, gas) and show the kind per car.
+
+### Changed
+- **Fill-ups follow the fuel card, not the waybill.** A fuel record no longer needs a waybill:
+  the card belongs to the driver and the driver to a car, so a statement fill-up with no waybill
+  on that day is loaded against the driver's car (the car of that day's waybills, else the car
+  assigned to the driver, else the only car of the driver's waybills that month). Only a fill-up
+  whose driver or car cannot be told is left out, with the reason. The fuel form gets *Водитель*
+  and *Машина* (the car is filled in from the driver); with a waybill both still come from it.
+- The month calculations, the fuel card and the analysis count the month's fill-ups **per car**
+  by the card operations (by date), with or without a waybill. A car with fill-ups but no
+  waybills in the month is listed too, carrying over its last remainder, and the control flags it.
+
+### Added
+- **Month calculations per vehicle** (in *Закрытие месяца* and as `Расчёты по машинам <месяц>.csv`
+  in the zip): fuel at the start (the first waybill of the month), fuel at the end (the last
+  closed waybill), mileage by the waybills and by the odometer (first departure reading to last
+  return reading, so mileage without a waybill shows), fill-ups, actual consumption
+  (start + fill-ups - end), consumption by the norm (each waybill with its own season's rate),
+  the deviation in litres and percent, and the same per driver. A note names what does not add
+  up (mileage without waybills, remainders that do not chain, open waybills, a missing norm).
+  API: `GET /api/primavtodor/month/{ГГГГ-ММ}/calculations`.
 - **Closing of the month** (*Закрытие месяца* on the Примавтодор page): one screen with the steps
   (waybills closed, fill-ups loaded, control, timesheet norm), the findings and a single
   *Скачать всё за месяц (.zip)* with the Т-12 timesheet, the fuel analysis, a fuel card per

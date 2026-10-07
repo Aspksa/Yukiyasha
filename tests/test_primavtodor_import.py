@@ -172,35 +172,69 @@ def test_a_hand_entered_fill_up_counts_as_a_duplicate(module) -> None:
     assert report["counts"]["duplicate"] == 1 and len(module.data.snapshot("fuel")) == 1
 
 
+def test_a_fill_up_without_a_waybill_goes_to_the_drivers_car(module) -> None:
+    waybill = prepare(module)
+    rows = statement_rows((CARD, [("20.10.2026", "09:00:00", PETROL, 70.0, 10.0)]))  # no waybill
+
+    report = module.import_fuel_statement(xlsx(rows), "s.xlsx", apply=True)
+
+    operation = report["operations"][0]
+    assert report["counts"]["new"] == 1 and operation["waybill"] == "" and operation["vehicle"]
+    (fuel,) = module.data.snapshot("fuel")
+    assert "waybill_id" not in fuel or not fuel["waybill_id"]
+    assert fuel["driver_id"] == waybill["values"]["driver_id"]
+    assert fuel["vehicle_id"] == waybill["values"]["vehicle_id"] and fuel["card_number"] == CARD
+
+
 def test_unmatched_operations_are_reported_with_the_reason(module) -> None:
-    prepare(module)
+    vehicle = make_vehicle(module)
+    make_driver(module, None, fuel_card_number=CARD)  # a card, but no car assigned, no waybill
     rows = statement_rows(
         ("7009999999999", [("07.10.2026", "09:00:00", PETROL, 70.0, 10.0)]),  # unknown card
-        (CARD, [("20.10.2026", "09:00:00", PETROL, 70.0, 10.0)]),  # no waybill that day
+        (CARD, [("20.10.2026", "09:00:00", PETROL, 70.0, 10.0)]),  # no car can be told
     )
+    assert vehicle
 
     report = module.import_fuel_statement(xlsx(rows), "s.xlsx", apply=True)
 
     reasons = [str(op["reason"]) for op in report["operations"]]
     assert report["counts"]["unmatched"] == 2 and module.data.snapshot("fuel") == []
     assert "не закреплена ни за одним сотрудником" in reasons[0]
-    assert "Нет путевого листа за 20.10.2026" in reasons[1]
+    assert "нет машины" in reasons[1]
 
 
-def test_two_waybills_on_one_day_are_not_guessed(module) -> None:
+def test_the_only_car_of_the_drivers_waybills_in_the_month_is_used(module) -> None:
+    vehicle = make_vehicle(module)
+    driver = make_driver(module, None, fuel_card_number=CARD)  # no assigned car
+    make_waybill(module, driver, vehicle, number="1", date="2026-10-05")
+    rows = statement_rows((CARD, [("20.10.2026", "09:00:00", PETROL, 70.0, 10.0)]))
+
+    report = module.import_fuel_statement(xlsx(rows), "s.xlsx", apply=True)
+
+    assert report["counts"]["new"] == 1
+    assert module.data.snapshot("fuel")[0]["vehicle_id"] == vehicle["id"]
+
+
+def test_two_waybills_on_one_day(module) -> None:
     waybill = prepare(module)
     driver, vehicle = waybill["values"]["driver_id"], waybill["values"]["vehicle_id"]
-    module.data.create(
-        "waybills",
-        {"number": "6", "date": "2026-10-07", "driver_id": driver, "vehicle_id": vehicle,
-         "odometer_out": 1, "fuel_out": 0},
-    )  # fmt: skip
+    second = {"number": "6", "date": "2026-10-07", "driver_id": driver, "vehicle_id": vehicle,
+              "odometer_out": 1, "fuel_out": 0}  # fmt: skip
+    module.data.create("waybills", second)
     content = xlsx(statement_rows((CARD, [("07.10.2026", "09:00:00", PETROL, 70.0, 10.0)])))
 
-    report = module.import_fuel_statement(content, "s.xlsx", apply=True)
+    same_car = module.import_fuel_statement(content, "s.xlsx", apply=True)  # one car: not a guess
 
-    assert report["counts"]["unmatched"] == 1
-    assert "Несколько путевых листов" in str(report["operations"][0]["reason"])
+    assert same_car["counts"]["new"] == 1 and same_car["operations"][0]["waybill"] == ""
+    other = make_vehicle(module, plate="Б2", model="Вторая")
+    module.data.create("waybills", {**second, "number": "7", "vehicle_id": other["id"],
+                                    "odometer_out": 2})  # fmt: skip
+    again = xlsx(statement_rows((CARD, [("07.10.2026", "10:00:00", PETROL, 70.0, 11.0)])))
+
+    ambiguous = module.import_fuel_statement(again, "s2.xlsx", apply=True)
+
+    assert ambiguous["counts"]["unmatched"] == 1
+    assert "на разных машинах" in str(ambiguous["operations"][0]["reason"])
 
 
 # ----- HTTP -----
@@ -253,16 +287,3 @@ def test_a_second_real_fill_up_is_not_swallowed_by_a_hand_entered_one(module) ->
     assert len(module.data.snapshot("fuel")) == 2
 
 
-def test_a_changed_driver_card_does_not_make_old_fill_ups_look_new(module) -> None:
-    waybill = prepare(module)
-    content = xlsx(statement_rows((CARD, [("07.10.2026", "09:17:16", PETROL, 70.0, 40.0)])))
-    module.import_fuel_statement(content, "s.xlsx", apply=True)
-    driver = module.data.get("employees", waybill["values"]["driver_id"])["values"]
-    module.data.update("employees", waybill["values"]["driver_id"],
-                       {**driver, "fuel_card_number": "7001000099999"})  # fmt: skip
-    moved = ("7001000099999", [("07.10.2026", "09:17:16", PETROL, 70.0, 40.0)])
-    again = xlsx(statement_rows(moved))
-
-    report = module.import_fuel_statement(again, "s2.xlsx", apply=True)
-
-    assert report["counts"]["duplicate"] == 1 and len(module.data.snapshot("fuel")) == 1

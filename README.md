@@ -141,13 +141,21 @@ as ordinary environment variables (they win over the file). `http://` is accepte
   signers and the wording of the control once in *Данные для печати* (waybills page).
 - **Fuel statement:** ГСМ → *Загрузить выписку* (`.xls`/`.xlsx` from the card provider). A preview
   shows what will be loaded and what cannot be matched; loading the same file again adds nothing.
-  A fill-up is matched through the card number to the driver and to that driver's waybill on the
-  date of the fill-up.
+  The card belongs to the driver, so a fill-up is matched through the card number to the driver
+  and to a car: that day's waybill if there is one, otherwise the car assigned to the driver. The
+  month's fill-ups of a car (by card, with or without a waybill) feed the calculations.
 - **Monthly fuel card:** open a vehicle → choose the month → *Скачать*: a sheet per driver.
 - **Closing of the month:** on the Примавтодор page, *Закрытие месяца* shows what is done and what
   does not add up (overruns, odometer and fuel gaps, wrong fuel, fill-ups over the tank volume —
   set it on the vehicle, unclosed waybills, ...). Accept a finding you have checked; download the
   whole month (timesheet, analysis, fuel cards, findings) as one zip.
+- **Employees, cars and cards:** change a driver's car or fuel card in the employee form (with a
+  date if it is not today); the history is kept and old fill-ups resolve to the holder and the car
+  of their own day. A manual fill-up (cash, or no card) needs only a car. The tank's remainder
+  stays with the car: the next driver starts with it.
+- **Calculations:** *Закрытие месяца* also shows, per vehicle, the fuel at the start (first
+  waybill) and at the end (last closed waybill), the mileage by waybills and by the odometer, the
+  actual consumption (start + fill-ups − end), the consumption by the norm and the deviation.
 - **Timesheet:** the *Календарь* button shows the production calendar of Russia for 2026 and 2027
   (choose the year); holidays and transfers are painted in the timesheet and the month norm is
   shown. *Табель Т-12 (.xlsx)* fills your form. Calendar data: open data of xmlcalendar.ru

@@ -10,7 +10,7 @@ import json
 import math
 import re
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from yukiyasha.modules.disk import DiskConflictError, DiskError, DiskModule
 from yukiyasha.modules.primavtodor.errors import (
@@ -30,6 +30,7 @@ from yukiyasha.modules.primavtodor.schema import (
     KIND_FUEL,
     KIND_VEHICLES,
     KIND_WAYBILLS,
+    PAYMENTS,
     REF,
     TEXT,
     Entity,
@@ -40,7 +41,7 @@ from yukiyasha.modules.primavtodor.settings import SEASON_LABELS, ModuleSettings
 
 ID_RE = re.compile(r"^[a-z]+-[0-9a-f]{8}$")
 TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
-META_KEYS = {"id", "created_at", "updated_at"}
+META_KEYS = {"id", "created_at", "updated_at", "vehicle_history", "card_history"}
 OVERRUN_RATIO = 0.10  # fuel consumption above the norm by more than this is flagged
 MISSING_TARGET = "— удалено —"
 
@@ -79,6 +80,113 @@ def format_date(value: object) -> str:
         return str(value)
 
 
+# ----- who has which car and fuel card on which day -----
+#
+# An employee record keeps the *current* ``vehicle_id`` and ``fuel_card_number`` and, next to
+# them, an interval history of each (``vehicle_history`` / ``card_history``)::
+#
+#     {"value": "<vehicle id or card>", "from": "2026-10-06" | "", "to": "2026-10-08" | None}
+#
+# ``from`` is the first day, ``to`` the last (``None`` while it lasts); an empty ``from`` means
+# "since always" (records made before the history existed). Old fill-ups ask for the value on
+# *their* day, so a changed car or card never rewrites the past.
+
+HISTORY_KEYS = {"vehicle_id": "vehicle_history", "fuel_card_number": "card_history"}
+
+
+def history_of(record: dict[str, object] | None, key: str) -> list[dict[str, object]]:
+    """The stored history of ``key``; for older records one interval from the current value."""
+    if not record:
+        return []
+    stored = record.get(HISTORY_KEYS[key])
+    if isinstance(stored, list):
+        return [dict(item) for item in stored if isinstance(item, dict)]
+    current = str(record.get(key) or "")
+    return [{"value": current, "from": "", "to": None}] if current else []
+
+
+def value_on(history: list[dict[str, object]], day: str) -> str | None:
+    """The value valid on ``day`` (``ГГГГ-ММ-ДД``); the interval that began last wins."""
+    found: tuple[str, str] | None = None
+    for item in history:
+        start, end = str(item.get("from") or ""), item.get("to")
+        if start <= day and (end is None or day <= str(end)):
+            if found is None or start >= found[0]:
+                found = (start, str(item.get("value")))
+    return found[1] if found else None
+
+
+def vehicle_at(employee: dict[str, object] | None, day: str) -> str | None:
+    return value_on(history_of(employee, "vehicle_id"), day)
+
+
+def card_at(employee: dict[str, object] | None, day: str) -> str | None:
+    return value_on(history_of(employee, "fuel_card_number"), day)
+
+
+def card_owner_at(
+    employees: list[dict[str, object]], card: str, day: str
+) -> dict[str, object] | None:
+    """The employee who held ``card`` on ``day``."""
+    for employee in employees:
+        if card_at(employee, day) == card:
+            return employee
+    return None
+
+
+def apply_change(
+    existing: dict[str, object] | None,
+    values: dict[str, object],
+    effective: date | None,
+    today: date,
+) -> dict[str, list[dict[str, object]]]:
+    """New histories after ``values`` replace the employee's current car and card.
+
+    A change takes effect on ``effective`` (default: today when an existing record is edited,
+    "since always" for a new one). The interval that was open ends the day before.
+    """
+    result: dict[str, list[dict[str, object]]] = {}
+    for key, history_key in HISTORY_KEYS.items():
+        old = str((existing or {}).get(key) or "")
+        new = str(values.get(key) or "")
+        history = history_of(existing, key)
+        if existing is None or old != new:
+            start = effective if effective is not None else (today if existing else None)
+            first_day = start.isoformat() if start else ""
+            closing = (start - timedelta(days=1)).isoformat() if start else None
+            kept: list[dict[str, object]] = []
+            for item in history:
+                begins = str(item.get("from") or "")
+                if item.get("to") is None:
+                    if closing is None or begins > closing:
+                        continue  # superseded: it would begin after the change
+                    item = {**item, "to": closing}
+                kept.append(item)
+            history = kept
+            if new:
+                history.append({"value": new, "from": first_day, "to": None})
+        result[history_key] = history
+    return result
+
+
+def describe_history(history: list[dict[str, object]], labels: dict[str, str]) -> str:
+    """«Hino: 02.10.2026 — 05.10.2026; Lexus: с 06.10.2026»"""
+    parts = []
+    for item in sorted(history, key=lambda i: str(i.get("from") or "")):
+        label = labels.get(str(item.get("value")), str(item.get("value")))
+        start, end = str(item.get("from") or ""), item.get("to")
+        if start and end:
+            span = f"{format_date(start)} — {format_date(str(end))}"
+        elif start:
+            span = f"с {format_date(start)}"
+        elif end:
+            span = f"по {format_date(str(end))}"
+        else:
+            span = "постоянно"
+        parts.append(f"{label}: {span}")
+    return "; ".join(parts) or "—"
+
+
 class RecordStore:
     """JSON files of one record kind inside its section folder."""
 
@@ -107,6 +215,8 @@ class RecordStore:
             legacy = data.pop("norm_per_100km")  # one norm used to cover the whole year
             data.setdefault("norm_summer", legacy)
             data.setdefault("norm_winter", legacy)
+        if self.entity.kind == KIND_FUEL and not data.get("payment"):
+            data["payment"] = "card"  # fill-ups used to be card operations only
         if self.entity.kind == KIND_WAYBILLS and not data.get("season"):
             data["season"] = "summer"  # history must not change when the season is switched
         return data
@@ -238,6 +348,8 @@ class Records:
         values = self._clean(entity, payload, self._ctx(), own_id=None)
         now = _now()
         record = {"id": store.new_id(), "created_at": now, "updated_at": now, **values}
+        if kind == KIND_EMPLOYEES:
+            record.update(self._histories(None, record))
         try:
             store.save(record, overwrite=False)
         except DiskConflictError:  # an id collision is practically impossible; retry once
@@ -256,6 +368,8 @@ class Records:
             "updated_at": _now(),
             **values,
         }
+        if kind == KIND_EMPLOYEES:
+            record.update(self._histories(existing, record))
         store.save(record, overwrite=True)
         return self._view(entity, record, self._ctx())
 
@@ -270,6 +384,18 @@ class Records:
                 f"Нельзя удалить: на запись ссылаются другие данные ({shown})", references
             )
         store.delete(record_id)
+
+    @staticmethod
+    def _histories(
+        existing: dict[str, object] | None, record: dict[str, object]
+    ) -> dict[str, list[dict[str, object]]]:
+        """Car and card histories after a save; the date of the change itself is not kept."""
+        raw = record.pop("assignment_date", None)
+        try:
+            effective = date.fromisoformat(str(raw)) if raw else None
+        except ValueError:
+            effective = None
+        return apply_change(existing, record, effective, date.today())
 
     def apply_season(self, season: str) -> dict[str, object]:
         """Switch the module-wide season.
@@ -299,6 +425,18 @@ class Records:
         if entity.kind == KIND_WAYBILLS and _blank(payload.get("season")):
             # A waybill that does not say otherwise starts in the current season.
             payload = {**payload, "season": ctx.season}
+        if (
+            entity.kind == KIND_WAYBILLS
+            and _blank(payload.get("fuel_out"))
+            and not _blank(payload.get("vehicle_id"))
+        ):
+            # The tank's remainder goes with the car to the next driver.
+            remainder, _ = self._remainder(payload.get("vehicle_id"), ctx)
+            if remainder is not None:
+                payload = {**payload, "fuel_out": remainder}
+        if entity.kind == KIND_FUEL and not _blank(payload.get("waybill_id")):
+            # With a waybill the driver and the car come from it; nothing the client sends counts.
+            payload = {**payload, "driver_id": None, "vehicle_id": None}
         for item in entity.fields:
             values[item.name] = self._parse(item, payload.get(item.name), errors)
         self._normalize(entity.kind, values)
@@ -489,20 +627,43 @@ class Records:
         liters = _num(values.get("liters"))
         if liters is not None and liters <= 0:
             errors["liters"] = "Количество должно быть больше нуля"
+        payment = str(values.get("payment") or "card")
+        values["payment"] = payment
+        day = str(values.get("date") or "")
         waybill = ctx.get(KIND_WAYBILLS, values.get("waybill_id"))
-        if waybill is None:
-            return
-        driver = ctx.get(KIND_EMPLOYEES, waybill.get("driver_id"))
-        card = str(driver.get("fuel_card_number") or "") if driver else ""
-        if not card:
-            name = driver.get("full_name") if driver else "водителя"
-            errors["waybill_id"] = f"У водителя «{name}» не закреплена топливная карта"
-            return
-        vehicle = ctx.get(KIND_VEHICLES, waybill.get("vehicle_id"))
-        # Derived from the waybill, so a fuel record can never contradict it.
-        values["driver_id"] = waybill.get("driver_id")
-        values["vehicle_id"] = waybill.get("vehicle_id")
-        values["card_number"] = card
+        if waybill is not None:
+            driver_id, vehicle_id = waybill.get("driver_id"), waybill.get("vehicle_id")
+            where = "waybill_id"
+        else:
+            # Without a waybill the driver (card owner) or the car says where the fuel went; the
+            # car is the one the driver is assigned to *on that day* unless it is given.
+            driver_id, vehicle_id = values.get("driver_id"), values.get("vehicle_id")
+            where = "driver_id"
+            if payment == "card" and not driver_id:
+                errors["driver_id"] = "Для заправки по карте укажите путевой лист или водителя"
+                return
+            if not vehicle_id and driver_id:
+                owner = ctx.get(KIND_EMPLOYEES, driver_id)
+                vehicle_id = vehicle_at(owner, day) or (owner.get("vehicle_id") if owner else None)
+            if not vehicle_id:
+                errors["vehicle_id"] = "Укажите машину: у водителя она не закреплена"
+                return
+        driver = ctx.get(KIND_EMPLOYEES, driver_id) if driver_id else None
+        if payment == "card":
+            card = ""
+            if driver:
+                card = card_at(driver, day) or str(driver.get("fuel_card_number") or "")
+            if not card:
+                name = driver.get("full_name") if driver else "водителя"
+                errors[where] = f"У водителя «{name}» не закреплена топливная карта"
+                return
+            values["card_number"] = card
+        else:  # cash or another way of paying: no card is involved
+            values["card_number"] = None
+        vehicle = ctx.get(KIND_VEHICLES, vehicle_id)
+        # Derived from the waybill (or the driver), so a fuel record can never contradict it.
+        values["driver_id"] = driver_id
+        values["vehicle_id"] = vehicle_id
         if not values.get("fuel_type") and vehicle:
             values["fuel_type"] = vehicle.get("fuel_type")
 
@@ -514,6 +675,9 @@ class Records:
             for waybill in ctx.all(KIND_WAYBILLS).values():
                 if waybill.get("driver_id") == record_id:
                     found.append(self._label(KIND_WAYBILLS, waybill, ctx))
+            for fuel in ctx.all(KIND_FUEL).values():
+                if fuel.get("driver_id") == record_id and not fuel.get("waybill_id"):
+                    found.append(f"заправка {format_date(fuel.get('date'))}")
         elif kind == KIND_VEHICLES:
             for employee in ctx.all(KIND_EMPLOYEES).values():
                 if employee.get("vehicle_id") == record_id:
@@ -521,6 +685,9 @@ class Records:
             for waybill in ctx.all(KIND_WAYBILLS).values():
                 if waybill.get("vehicle_id") == record_id:
                     found.append(self._label(KIND_WAYBILLS, waybill, ctx))
+            for fuel in ctx.all(KIND_FUEL).values():
+                if fuel.get("vehicle_id") == record_id and not fuel.get("waybill_id"):
+                    found.append(f"заправка {format_date(fuel.get('date'))}")
         elif kind == KIND_WAYBILLS:
             for fuel in ctx.all(KIND_FUEL).values():
                 if fuel.get("waybill_id") == record_id:
@@ -575,6 +742,16 @@ class Records:
         record_id = record["id"]
 
         if kind == KIND_EMPLOYEES:
+            vehicle_names = {
+                str(v["id"]): f"{v.get('model') or ''} {v.get('plate') or ''}".strip()
+                for v in ctx.all(KIND_VEHICLES).values()
+            }
+            computed["vehicle_history_text"] = describe_history(
+                history_of(record, "vehicle_id"), vehicle_names
+            )
+            computed["card_history_text"] = describe_history(
+                history_of(record, "fuel_card_number"), {}
+            )
             if record.get("is_driver") and record.get("active", True):
                 if not record.get("fuel_card_number"):
                     warnings.append("Не закреплена топливная карта")
@@ -590,6 +767,9 @@ class Records:
             computed["drivers"] = ", ".join(sorted(drivers, key=str.casefold)) or "—"
             computed["norm_active"] = norm_rate(record, ctx.season)
             computed["norm_active_season"] = SEASON_LABELS[ctx.season]
+            remainder, note = self._remainder(record_id, ctx)
+            computed["fuel_remainder"] = remainder
+            computed["remainder_note"] = note
 
         elif kind == KIND_WAYBILLS:
             computed, warnings = self._compute_waybill(record, ctx)
@@ -599,12 +779,30 @@ class Records:
             vehicle = ctx.get(KIND_VEHICLES, record.get("vehicle_id"))
             liters, price = _num(record.get("liters")), _num(record.get("price_per_liter"))
             computed = {
-                "driver": self._label(KIND_EMPLOYEES, driver, ctx) if driver else MISSING_TARGET,
+                "payment_label": dict(PAYMENTS).get(str(record.get("payment") or "card"), ""),
+                "driver": self._label(KIND_EMPLOYEES, driver, ctx) if driver else "—",
                 "vehicle": self._label(KIND_VEHICLES, vehicle, ctx) if vehicle else MISSING_TARGET,
                 "card_number": record.get("card_number") or "—",
                 "amount": _round(liters * price) if liters is not None and price else None,
             }
         return computed, warnings
+
+    def _remainder(self, vehicle_id: object, ctx: _Ctx) -> tuple[float | None, str]:
+        """The fuel left in the tank after the vehicle's last closed waybill, whoever drove it.
+
+        The remainder belongs to the car: the next driver who takes it starts with it.
+        """
+        closed = [
+            w for w in ctx.all(KIND_WAYBILLS).values()
+            if w.get("vehicle_id") == vehicle_id and _num(w.get("fuel_in")) is not None
+        ]  # fmt: skip
+        if not closed:
+            return None, "—"
+        last = max(closed, key=lambda w: (str(w.get("date")), str(w.get("number"))))
+        driver = ctx.get(KIND_EMPLOYEES, last.get("driver_id"))
+        who = f", водитель {driver.get('full_name')}" if driver else ""
+        note = f"лист № {last.get('number')} от {format_date(last.get('date'))}{who}"
+        return _num(last.get("fuel_in")), note
 
     def _compute_waybill(
         self, record: dict[str, object], ctx: _Ctx

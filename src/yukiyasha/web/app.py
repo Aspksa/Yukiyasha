@@ -414,6 +414,11 @@ def create_app(
             lambda: runtime.primavtodor.month_review(month, show_dismissed=show_dismissed)
         )
 
+    @application.get("/api/primavtodor/month/{month}/calculations")
+    def primavtodor_month_calculations(month: str) -> dict[str, object]:
+        """Fuel balances, mileage, actual consumption and the norm per vehicle."""
+        return primavtodor_call(lambda: runtime.primavtodor.month_calculations(month))
+
     @application.get("/api/primavtodor/month/{month}/package")
     def primavtodor_month_package(month: str) -> Response:
         """A zip with the timesheet, the analysis, the fuel cards and the findings."""

@@ -231,6 +231,22 @@ def run_checks(
                 f"{price:g} ₽ за литр при типичных {typical:g} ₽",
                 "fuel", record["id"], day, subject)
 
+    cars_with_waybills = {str(w.get("vehicle_id")) for w in in_month}
+    litres_without_waybills: dict[str, float] = {}
+    for record in month_fuel:
+        owner = str(record.get("vehicle_id") or by_id.get(str(record.get("waybill_id")), {}).get(
+            "vehicle_id"
+        ))
+        if owner not in cars_with_waybills:
+            litres_without_waybills[owner] = litres_without_waybills.get(owner, 0.0) + (
+                _num(record.get("liters")) or 0.0
+            )
+    for owner, total in litres_without_waybills.items():
+        plate = vehicles.get(owner, {}).get("plate", "?")
+        add("FUEL_NO_WAYBILLS", WARN, "Заправки есть, путевых листов нет",
+            f"По машине {plate} заправлено {total:g} л, а путевых листов за месяц нет",
+            "vehicles", owner, f"{month}-01", str(plate))
+
     for waybill in in_month:
         vehicle = vehicles.get(str(waybill.get("vehicle_id")), {})
         tank = _num(vehicle.get("tank_liters"))

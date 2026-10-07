@@ -528,6 +528,9 @@ function pvWireForm(entity, lists, isNew) {
     const driverSelect = field("driver_id");
     const vehicleSelect = field("vehicle_id");
     const odometer = field("odometer_out");
+    const fuelOut = field("fuel_out");
+    if (isNew) fuelOut.dataset.auto = "1"; // the preset 0 is not something a person typed
+    fuelOut.addEventListener("input", () => delete fuelOut.dataset.auto);
 
     driverSelect.addEventListener("change", () => {
       const driver = (lists.employees ?? []).find((item) => item.id === driverSelect.value);
@@ -538,9 +541,17 @@ function pvWireForm(entity, lists, isNew) {
       }
     });
     vehicleSelect.addEventListener("change", () => {
+      const vehicle = (lists.vehicles ?? []).find((item) => item.id === vehicleSelect.value);
+      // The tank's remainder goes with the car: whoever takes it starts with what was left.
+      const remainder = vehicle?.computed.fuel_remainder;
+      const fuelTyped = fuelOut.value.trim() !== "" && fuelOut.dataset.auto !== "1";
+      if (isNew && !fuelTyped && remainder !== null && remainder !== undefined) {
+        fuelOut.value = String(remainder);
+        fuelOut.dataset.auto = "1";
+        fuelOut.title = `Остаток в баке: ${vehicle.computed.remainder_note}`;
+      }
       const userTyped = odometer.value.trim() !== "" && odometer.dataset.auto !== "1";
       if (!isNew || userTyped) return;
-      const vehicle = (lists.vehicles ?? []).find((item) => item.id === vehicleSelect.value);
       const lastClosed = pv.records
         .filter((record) => record.values.vehicle_id === vehicleSelect.value && record.values.odometer_in !== null)
         .sort((a, b) => b.values.odometer_in - a.values.odometer_in)[0];
@@ -554,6 +565,13 @@ function pvWireForm(entity, lists, isNew) {
   }
 
   if (entity.kind === "fuel") {
+    const driverSelect = field("driver_id");
+    driverSelect.addEventListener("change", () => {
+      // Without a waybill the fill-up goes to the car the driver is assigned to.
+      const driver = (lists.employees ?? []).find((item) => item.id === driverSelect.value);
+      const car = field("vehicle_id");
+      if (driver?.values.vehicle_id && !car.value) car.value = driver.values.vehicle_id;
+    });
     const waybillSelect = field("waybill_id");
     waybillSelect.addEventListener("change", () => {
       const waybill = (lists.waybills ?? []).find((item) => item.id === waybillSelect.value);
@@ -713,8 +731,10 @@ function pvRenderImport(report) {
   const counts = report.counts;
   const summary = pvById("import-summary");
   const parts = [`${report.period || "Выписка"}: операций ${counts.total}`];
+  const withoutWaybill = report.operations.filter((op) => op.status === "new" && !op.waybill).length;
   if (report.applied) parts.push(`загружено ${counts.new}`);
   else parts.push(`будет загружено ${counts.new} (${PV_UTIL.formatNumber(report.liters_new)} л)`);
+  if (withoutWaybill) parts.push(`из них без путевого листа ${withoutWaybill} (по машине водителя)`);
   parts.push(`уже были ${counts.duplicate}`);
   if (counts.unmatched + counts.failed) parts.push(`не удалось привязать ${counts.unmatched + counts.failed}`);
   summary.textContent = parts.join(" · ");
@@ -798,7 +818,12 @@ async function pvLoadMonth() {
   if (!/^\d{4}-\d{2}$/.test(month)) return;
   try {
     const query = new URLSearchParams({ show_dismissed: String(pvById("month-show-dismissed").checked) });
-    pvRenderMonth(await api("GET", `/api/primavtodor/month/${month}/review?${query}`));
+    const [review, calculations] = await Promise.all([
+      api("GET", `/api/primavtodor/month/${month}/review?${query}`),
+      api("GET", `/api/primavtodor/month/${month}/calculations`),
+    ]);
+    pvRenderMonth(review);
+    pvRenderCalculations(calculations);
   } catch (failure) {
     error.textContent = describeError(failure);
     error.hidden = false;
@@ -860,6 +885,88 @@ function pvRenderMonth(review) {
     }),
   );
   pvById("month-findings-title").hidden = review.findings.length === 0;
+}
+
+function pvRenderCalculations(data) {
+  const table = pvById("month-calc");
+  const has = data.vehicles.length > 0;
+  pvById("month-calc-title").hidden = !has;
+  pvById("month-calc-wrap").hidden = !has;
+  if (!has) {
+    table.replaceChildren();
+    return;
+  }
+  const num = (value, digits = 1) => (value === null || value === undefined ? "—" : PV_UTIL.formatNumber(value, digits));
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (const label of [
+    "Машина", "Остаток на начало, л", "Заправлено, л", "Остаток на конец, л",
+    "Пробег по листам, км", "Пробег по одометру, км", "Расход факт, л", "По норме, л", "Отклонение, л",
+  ]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    headRow.append(th);
+  }
+  head.append(headRow);
+
+  const body = document.createElement("tbody");
+  for (const car of data.vehicles) {
+    const row = document.createElement("tr");
+    const who = document.createElement("th");
+    who.scope = "row";
+    who.textContent = `${car.plate} ${car.model} · ${car.fuel_kind_label}`.trim();
+    const small = document.createElement("small");
+    const drivers = car.drivers.map((d) => d.driver).join(", ");
+    const same = car.first && car.last && car.last.number === car.first.number;
+    let span = "путевых листов нет";
+    if (same) span = `лист № ${car.first.number} (${PV_UTIL.formatDate(car.first.date)})`;
+    else if (car.first && car.last) span = `листы № ${car.first.number} (${PV_UTIL.formatDate(car.first.date)}) … № ${car.last.number} (${PV_UTIL.formatDate(car.last.date)})`;
+    else if (car.first) span = `лист № ${car.first.number}, не закрыт`;
+    small.textContent = `${drivers} · ${span}`;
+    who.append(small);
+    row.append(who);
+    const deviation = car.deviation;
+    const cells = [
+      num(car.fuel_start), num(car.fills), num(car.fuel_end), num(car.km_waybills, 0),
+      car.km_odometer === null ? "—" : `${num(car.odometer_start, 0)} → ${num(car.odometer_end, 0)} (${num(car.km_odometer, 0)})`,
+      num(car.consumption), car.norm ? num(car.norm) : "—",
+      deviation === null ? "—" : `${deviation > 0 ? "+" : ""}${num(deviation)} (${car.deviation_pct > 0 ? "+" : ""}${car.deviation_pct}%)`,
+    ];
+    cells.forEach((text, index) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      if (index === cells.length - 1 && deviation !== null) td.className = deviation > 0 ? "over" : "under";
+      row.append(td);
+    });
+    body.append(row);
+    for (const note of car.notes) {
+      const noteRow = document.createElement("tr");
+      noteRow.className = "calc-note";
+      const cell = document.createElement("td");
+      cell.colSpan = cells.length + 1;
+      cell.textContent = `${car.plate}: ${note}`;
+      noteRow.append(cell);
+      body.append(noteRow);
+    }
+  }
+  const footer = document.createElement("tfoot");
+  for (const totals of Object.values(data.totals)) { // diesel and petrol are never added together
+    const totalRow = document.createElement("tr");
+    const label = document.createElement("th");
+    label.textContent = `Итого ${totals.label.toLowerCase()} (${totals.vehicles})`;
+    totalRow.append(label);
+    for (const text of [
+      num(totals.fuel_start), num(totals.fills), num(totals.fuel_end), num(totals.km_waybills), "",
+      num(totals.consumption), num(totals.norm), `${totals.deviation > 0 ? "+" : ""}${num(totals.deviation)}`,
+    ]) {
+      const td = document.createElement("td");
+      td.textContent = text;
+      totalRow.append(td);
+    }
+    footer.append(totalRow);
+  }
+  table.replaceChildren(head, body, footer);
 }
 
 async function pvToggleFinding(finding, button) {

@@ -17,6 +17,8 @@ def test_disk_lifecycle_and_manifest(tmp_path: Path) -> None:
 
     assert disk.state is ModuleState.READY
     assert disk.root.exists()
+    assert (disk.root / "projects" / "work").is_dir()
+    assert (disk.root / "projects" / "home").is_dir()
     snapshot = registry.snapshots()[0]
     assert snapshot["manifest"]["module_id"] == "disk"
     assert snapshot["manifest"]["name"] == "Диск Yukiyasha"

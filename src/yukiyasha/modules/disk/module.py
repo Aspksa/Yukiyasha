@@ -33,6 +33,8 @@ class DiskModule:
 
     def start(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
+        (self.root / "projects" / "work").mkdir(parents=True, exist_ok=True)
+        (self.root / "projects" / "home").mkdir(parents=True, exist_ok=True)
         self._state = ModuleState.READY
 
     def stop(self) -> None:

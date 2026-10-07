@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from yukiyasha.config import Settings
+from yukiyasha.modules import ModuleRegistry
+from yukiyasha.modules.disk import DiskModule
 
 
 class RuntimeState(StrEnum):
@@ -29,25 +31,30 @@ class RuntimeSnapshot:
 
 
 class YukiyashaRuntime:
-    """Small deterministic application kernel.
-
-    The runtime owns process-level state. Future modules plug into this layer
-    instead of coupling directly to the web interface.
-    """
+    """Application kernel and module lifecycle owner."""
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or Settings.from_env()
         self._started_at = datetime.now(UTC)
         self._state = RuntimeState.STARTING
+        self.modules = ModuleRegistry()
+        self.disk = DiskModule(self.settings.disk_dir)
+        self.modules.register(self.disk)
 
     @property
     def state(self) -> RuntimeState:
         return self._state
 
     def start(self) -> None:
+        try:
+            self.modules.start_all()
+        except Exception:
+            self._state = RuntimeState.DEGRADED
+            raise
         self._state = RuntimeState.READY
 
     def stop(self) -> None:
+        self.modules.stop_all()
         self._state = RuntimeState.STOPPED
 
     def snapshot(self) -> RuntimeSnapshot:

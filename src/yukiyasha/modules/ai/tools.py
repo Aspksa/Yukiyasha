@@ -172,7 +172,7 @@ class AiToolRegistry:
     def _audit_metadata(
         self, name: str, arguments: dict[str, object]
     ) -> dict[str, object]:
-        allowed = {"kind", "record_id", "month", "employee_id", "limit"}
+        allowed = {"kind", "record_id", "month", "employee_id", "section_id", "limit"}
         metadata = {key: value for key, value in arguments.items() if key in allowed}
         if name == "memory_remember":
             metadata["content_stored"] = True

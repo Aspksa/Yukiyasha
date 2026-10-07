@@ -26,7 +26,7 @@ def module(tmp_path: Path) -> PrimavtodorModule:
 
 def make_vehicle(module: PrimavtodorModule, **overrides: object) -> dict:
     values = {"plate": "а123 вб 125", "model": "КАМАЗ 65115", "fuel_type": "ДТ",
-              "norm_per_100km": "30,5", "odometer_km": 120000}
+              "norm_summer": "30,5", "norm_winter": "36", "odometer_km": 120000}
     return module.data.create("vehicles", {**values, **overrides})
 
 
@@ -54,7 +54,8 @@ def test_vehicle_is_normalised_and_stored_as_readable_json(module: PrimavtodorMo
     vehicle = make_vehicle(module)
 
     assert vehicle["values"]["plate"] == "А123ВБ125"  # spaces removed, upper case
-    assert vehicle["values"]["norm_per_100km"] == 30.5  # decimal comma accepted
+    assert vehicle["values"]["norm_summer"] == 30.5  # decimal comma accepted
+    assert vehicle["values"]["norm_winter"] == 36
     assert vehicle["label"] == "А123ВБ125 · КАМАЗ 65115"
     stored = Path(module._disk.root) / "projects/work/Примавтодор/Гараж" / f"{vehicle['id']}.json"
     data = json.loads(stored.read_text(encoding="utf-8"))
@@ -113,8 +114,8 @@ def test_unknown_vehicle_reference_is_rejected(module: PrimavtodorModule) -> Non
     [
         ({"plate": "", "model": "x"}, "plate"),
         ({"plate": "A1", "model": ""}, "model"),
-        ({"plate": "A1", "model": "x", "norm_per_100km": "-1"}, "norm_per_100km"),
-        ({"plate": "A1", "model": "x", "norm_per_100km": "abc"}, "norm_per_100km"),
+        ({"plate": "A1", "model": "x", "norm_summer": "-1"}, "norm_summer"),
+        ({"plate": "A1", "model": "x", "norm_winter": "abc"}, "norm_winter"),
         ({"plate": "A1", "model": "x", "odometer_km": "1.5"}, "odometer_km"),
         ({"plate": "A1", "model": "x", "fuel_type": "керосин"}, "fuel_type"),
         ({"plate": "A" * 40, "model": "x"}, "plate"),
@@ -161,7 +162,7 @@ def test_unknown_kind_and_missing_record(module: PrimavtodorModule) -> None:
 # ----- waybills -----
 
 def test_waybill_computes_distance_fuel_and_norm(module: PrimavtodorModule) -> None:
-    vehicle = make_vehicle(module, norm_per_100km=30)
+    vehicle = make_vehicle(module, norm_summer=30)
     driver = make_driver(module, vehicle["id"])
     waybill = make_waybill(module, driver, vehicle)
     assert waybill["computed"]["status"] == "Открыт"
@@ -188,7 +189,7 @@ def test_waybill_computes_distance_fuel_and_norm(module: PrimavtodorModule) -> N
 
 def test_overrun_and_other_car_warnings(module: PrimavtodorModule) -> None:
     assigned = make_vehicle(module)
-    other = make_vehicle(module, plate="В999ВВ25", norm_per_100km=20)
+    other = make_vehicle(module, plate="В999ВВ25", norm_summer=20)
     driver = make_driver(module, assigned["id"])
     waybill = make_waybill(module, driver, other)
     module.data.create("fuel", {"waybill_id": waybill["id"], "date": "2026-10-05", "liters": 80})
@@ -425,3 +426,147 @@ def test_inactive_employee_without_activity_is_left_out_of_the_timesheet(
 
     assert names == ["Работает"]
     assert present["id"]
+
+
+# ----- summer / winter fuel norms -----
+
+def season_waybill(module: PrimavtodorModule, driver: dict, vehicle: dict, **overrides) -> dict:
+    """A closed 100 km waybill that used 20 l (40 out, 20 left, nothing fuelled)."""
+    return make_waybill(
+        module, driver, vehicle, odometer_in=120100, fuel_in=20, **overrides
+    )
+
+
+def test_each_vehicle_has_a_summer_and_a_winter_norm(module: PrimavtodorModule) -> None:
+    vehicle = make_vehicle(module, norm_summer=30, norm_winter=36)
+    driver = make_driver(module, vehicle["id"])
+
+    summer = season_waybill(module, driver, vehicle, number="1", season="summer")
+    winter = season_waybill(module, driver, vehicle, number="2", season="winter")
+
+    assert summer["computed"]["norm_rate"] == 30 and summer["computed"]["norm"] == 30
+    assert winter["computed"]["norm_rate"] == 36 and winter["computed"]["norm"] == 36
+    assert summer["computed"]["season_label"] == "Лето"
+    assert winter["computed"]["season_label"] == "Зима"
+    assert winter["computed"]["deviation"] == 20 - 36  # 20 l used, 36 l allowed
+
+
+def test_the_same_trip_is_an_overrun_in_summer_but_not_in_winter(
+    module: PrimavtodorModule,
+) -> None:
+    vehicle = make_vehicle(module, norm_summer=15, norm_winter=30)
+    driver = make_driver(module, vehicle["id"])
+
+    summer = season_waybill(module, driver, vehicle, number="1", season="summer")
+    winter = season_waybill(module, driver, vehicle, number="2", season="winter")
+
+    assert "Перерасход топлива больше 10% от нормы" in summer["warnings"]
+    assert "Перерасход топлива больше 10% от нормы" not in winter["warnings"]
+
+
+def test_a_new_waybill_starts_in_the_current_season(module: PrimavtodorModule) -> None:
+    vehicle = make_vehicle(module)
+    driver = make_driver(module, vehicle["id"])
+    module.data.apply_season("winter")
+
+    waybill = make_waybill(module, driver, vehicle)
+
+    assert waybill["values"]["season"] == "winter"
+
+
+def test_vehicle_shows_the_norm_of_the_active_season(module: PrimavtodorModule) -> None:
+    vehicle = make_vehicle(module, norm_summer=30, norm_winter=36)
+
+    module.data.apply_season("summer")
+    assert module.data.get("vehicles", vehicle["id"])["computed"]["norm_active"] == 30
+    module.data.apply_season("winter")
+    computed = module.data.get("vehicles", vehicle["id"])["computed"]
+    assert computed["norm_active"] == 36 and computed["norm_active_season"] == "Зима"
+
+
+def test_switching_the_season_moves_open_waybills_but_never_closed_ones(
+    module: PrimavtodorModule,
+) -> None:
+    vehicle = make_vehicle(module)
+    driver = make_driver(module, vehicle["id"])
+    module.data.apply_season("summer")
+    open_one = make_waybill(module, driver, vehicle, number="1")
+    closed = season_waybill(module, driver, vehicle, number="2")
+
+    result = module.data.apply_season("winter")
+
+    assert result["season"] == "winter" and result["updated_waybills"] == 1
+    assert module.data.get("waybills", open_one["id"])["values"]["season"] == "winter"
+    kept = module.data.get("waybills", closed["id"])
+    assert kept["values"]["season"] == "summer"
+    assert kept["computed"]["norm_rate"] == 30.5  # history is untouched
+    assert module.data.apply_season("winter")["updated_waybills"] == 0  # nothing left to move
+
+
+def test_the_season_survives_a_restart(tmp_path: Path) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+    first = PrimavtodorModule(disk)
+    first.start()
+    first.data.apply_season("winter")
+
+    second = PrimavtodorModule(disk)  # a fresh instance reads the stored setting
+
+    settings = second.settings.load()
+    assert settings["season"] == "winter" and settings["source"] == "manual"
+    stored = Path(disk.root) / "projects/work/Примавтодор/settings.json"
+    assert json.loads(stored.read_text(encoding="utf-8"))["season"] == "winter"
+
+
+def test_without_a_manual_choice_the_season_follows_the_calendar(
+    module: PrimavtodorModule,
+) -> None:
+    from datetime import date
+
+    from yukiyasha.modules.primavtodor.settings import default_season
+
+    assert default_season(date(2026, 7, 15)) == "summer"
+    assert default_season(date(2026, 1, 15)) == "winter"
+    assert default_season(date(2026, 11, 1)) == "winter"
+    assert default_season(date(2026, 3, 31)) == "winter"
+    assert default_season(date(2026, 4, 1)) == "summer"
+    assert module.settings.load()["source"] == "calendar"
+
+
+def test_unknown_season_is_rejected(module: PrimavtodorModule) -> None:
+    for bad in ("", "autumn", "WINTER"):
+        with pytest.raises(RecordValidationError):
+            module.data.apply_season(bad)
+    with pytest.raises(RecordValidationError):
+        make_waybill(module, make_driver(module, None), make_vehicle(module), season="spring")
+
+
+def test_a_vehicle_without_a_norm_for_the_season_is_reported(module: PrimavtodorModule) -> None:
+    vehicle = make_vehicle(module, norm_winter="")
+    driver = make_driver(module, vehicle["id"])
+
+    waybill = season_waybill(module, driver, vehicle, season="winter")
+
+    assert waybill["computed"]["norm"] is None
+    assert "Для машины не задана норма на сезон «Зима»" in waybill["warnings"]
+
+
+def test_records_from_before_the_seasons_are_upgraded(module: PrimavtodorModule) -> None:
+    """One yearly norm used to be stored as norm_per_100km; waybills had no season."""
+    folder = Path(module._disk.root) / "projects/work/Примавтодор"
+    legacy_vehicle = {"id": "veh-aaaaaaaa", "created_at": "2026-01-01T00:00:00+00:00",
+                      "updated_at": "2026-01-01T00:00:00+00:00", "plate": "О001ОО25",
+                      "model": "Старая", "fuel_type": "ДТ", "norm_per_100km": 25.0,
+                      "odometer_km": 1, "active": True}
+    (folder / "Гараж" / "veh-aaaaaaaa.json").write_text(
+        json.dumps(legacy_vehicle, ensure_ascii=False), encoding="utf-8"
+    )
+
+    vehicle = module.data.get("vehicles", "veh-aaaaaaaa")
+
+    assert vehicle["values"]["norm_summer"] == 25 and vehicle["values"]["norm_winter"] == 25
+    assert "norm_per_100km" not in vehicle["values"]
+    # editing and saving writes the upgraded shape back
+    module.data.update("vehicles", "veh-aaaaaaaa", vehicle["values"])
+    saved = json.loads((folder / "Гараж" / "veh-aaaaaaaa.json").read_text(encoding="utf-8"))
+    assert "norm_per_100km" not in saved and saved["norm_summer"] == 25

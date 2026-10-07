@@ -30,6 +30,8 @@ FUEL_TYPES: tuple[tuple[str, str], ...] = (
     ("Газ", "Газ"),
 )
 
+SEASONS: tuple[tuple[str, str], ...] = (("summer", "Лето"), ("winter", "Зима"))
+
 KIND_EMPLOYEES = "employees"
 KIND_VEHICLES = "vehicles"
 KIND_WAYBILLS = "waybills"
@@ -157,7 +159,9 @@ VEHICLES = Entity(
         Field("plate", "Госномер", TEXT, required=True, unique=True, max_len=15),
         Field("model", "Марка и модель", TEXT, required=True, max_len=80),
         Field("fuel_type", "Вид топлива", CHOICE, default="ДТ", options=FUEL_TYPES),
-        Field("norm_per_100km", "Норма расхода, л на 100 км", FLOAT, min=0, max=500),
+        Field("norm_summer", "Норма расхода летом, л на 100 км", FLOAT, min=0, max=500),
+        Field("norm_winter", "Норма расхода зимой, л на 100 км", FLOAT, min=0, max=500,
+              help="Какая норма действует сейчас, переключается одним сезонным переключателем"),
         Field("odometer_km", "Пробег, км", INT, min=0, max=10_000_000),
         Field("active", "В эксплуатации", BOOL, default=True),
     ),
@@ -165,7 +169,9 @@ VEHICLES = Entity(
         Column("plate", "Госномер"),
         Column("model", "Марка и модель"),
         Column("fuel_type", "Топливо"),
-        Column("norm_per_100km", "Норма, л/100 км", "number"),
+        Column("norm_summer", "Лето", "number", "л/100 км"),
+        Column("norm_winter", "Зима", "number", "л/100 км"),
+        Column("norm_active", "Действует", "number", "л/100 км"),
         Column("drivers", "Водитель"),
     ),
 )
@@ -183,6 +189,8 @@ WAYBILLS = Entity(
         Field("driver_id", "Водитель", REF, required=True, ref=KIND_EMPLOYEES,
               ref_filter="is_driver"),
         Field("vehicle_id", "Машина", REF, required=True, ref=KIND_VEHICLES),
+        Field("season", "Сезон нормы", CHOICE, required=True, options=SEASONS,
+              help="Норма берётся из машины на этот сезон; по умолчанию — текущий сезон"),
         Field("route", "Маршрут", TEXT, max_len=500, multiline=True),
         Field("odometer_out", "Одометр при выезде, км", INT, required=True, min=0,
               max=10_000_000),
@@ -197,6 +205,7 @@ WAYBILLS = Entity(
         Column("date", "Дата", "date"),
         Column("driver_id", "Водитель"),
         Column("vehicle_id", "Машина"),
+        Column("season_label", "Сезон", "badge"),
         Column("distance", "Пробег", "number", "км"),
         Column("fuel_issued", "Заправлено", "number", "л"),
         Column("status", "Статус", "badge"),
@@ -206,6 +215,8 @@ WAYBILLS = Entity(
         ("distance", "Пробег", "км"),
         ("fuel_issued", "Заправлено по ГСМ", "л"),
         ("consumption", "Фактический расход", "л"),
+        ("season_label", "Сезон нормы", ""),
+        ("norm_rate", "Норма расхода", "л/100 км"),
         ("norm", "Норма по пробегу", "л"),
         ("deviation", "Отклонение от нормы", "л"),
     ),

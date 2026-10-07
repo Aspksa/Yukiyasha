@@ -46,6 +46,10 @@ class DiskWriteRequest(BaseModel):
     overwrite: bool = True
 
 
+class SeasonRequest(BaseModel):
+    season: str  # "summer" or "winter"
+
+
 class TimesheetMarkRequest(BaseModel):
     month: str
     employee_id: str
@@ -187,6 +191,15 @@ def create_app(
     @application.get("/api/primavtodor/schema")
     def primavtodor_schema() -> dict[str, object]:
         return runtime.primavtodor.schema()
+
+    @application.get("/api/primavtodor/settings")
+    def primavtodor_settings() -> dict[str, object]:
+        return primavtodor_call(runtime.primavtodor.settings.load)
+
+    @application.put("/api/primavtodor/settings/season")
+    def primavtodor_set_season(request: SeasonRequest) -> dict[str, object]:
+        """One switch for every fuel norm: summer or winter."""
+        return primavtodor_call(lambda: runtime.primavtodor.data.apply_season(request.season))
 
     @application.get("/api/primavtodor/records/{kind}")
     def primavtodor_list(kind: str) -> dict[str, object]:

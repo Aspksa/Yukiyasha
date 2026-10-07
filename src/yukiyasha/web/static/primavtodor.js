@@ -32,6 +32,8 @@ const pv = {
   timesheet: null,
   tsController: null,
   mark: null,
+  settings: null, // { season, season_label, source, updated_at }
+  seasons: [],
   wired: false,
 };
 
@@ -43,6 +45,8 @@ async function pvEnsureSchema() {
   if (pv.schema) return pv.schema;
   const schema = await api("GET", "/api/primavtodor/schema");
   pv.schema = schema;
+  pv.settings = schema.settings;
+  pv.seasons = schema.seasons;
   pv.entities = {};
   pv.bySection = {};
   for (const entity of schema.entities) {
@@ -50,6 +54,61 @@ async function pvEnsureSchema() {
     pv.bySection[entity.section_id] = entity;
   }
   return schema;
+}
+
+/* ---------- summer / winter switch ---------- */
+
+function pvBuildSeasonSwitch() {
+  const wrapper = document.createElement("div");
+  wrapper.className = "season-switch";
+  const label = document.createElement("span");
+  label.className = "season-label";
+  label.textContent = "Нормы расхода ГСМ";
+  const group = document.createElement("div");
+  group.className = "segments";
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-label", "Сезон норм расхода ГСМ");
+  for (const season of pv.seasons) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "season-btn";
+    button.dataset.season = season.value;
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(pv.settings.season === season.value));
+    button.title =
+      season.value === "winter" ? "Все нормы и открытые путевые листы — на зиму" : "Все нормы и открытые путевые листы — на лето";
+    button.append(icon(season.value === "winter" ? "i-snow" : "i-sun"), season.label);
+    button.addEventListener("click", () => void pvSetSeason(season.value));
+    group.append(button);
+  }
+  wrapper.append(label, group);
+  return wrapper;
+}
+
+/** Draw the switch into every header that has a slot for it. */
+function pvRenderSeasonSwitch() {
+  if (!pv.settings) return;
+  for (const slot of document.querySelectorAll(".season-slot")) slot.replaceChildren(pvBuildSeasonSwitch());
+}
+
+async function pvSetSeason(season) {
+  if (!pv.settings || pv.settings.season === season) return;
+  for (const button of document.querySelectorAll(".season-btn")) button.disabled = true;
+  try {
+    const result = await api("PUT", "/api/primavtodor/settings/season", { body: { season } });
+    pv.settings = result;
+    const moved = result.updated_waybills;
+    toast(
+      moved
+        ? `Сезон: ${result.season_label}. Открытых путевых листов переведено: ${moved}`
+        : `Сезон: ${result.season_label}`,
+    );
+    if (state.view === "entity") await pvLoadEntity();
+  } catch (error) {
+    toast(`Не удалось переключить сезон: ${describeError(error)}`, "error");
+  } finally {
+    pvRenderSeasonSwitch();
+  }
 }
 
 /** True for sections that have their own page (records or timesheet) instead of a plain folder. */
@@ -66,6 +125,7 @@ async function openPrimavtodorSection(sectionId) {
     return false;
   }
   pvWire();
+  pvRenderSeasonSwitch();
 
   if (sectionId === pv.schema.timesheet.section_id) {
     showView("timesheet");
@@ -268,7 +328,8 @@ function pvFillCell(cell, column, record) {
   const raw = pvColumnValue(column, record);
   if (column.kind === "badge" && raw) {
     const badge = document.createElement("span");
-    badge.className = `badge${raw === "Закрыт" ? " ok" : ""}`;
+    const tone = { Закрыт: "ok", Зима: "cold", Лето: "warm" }[raw];
+    badge.className = `badge${tone ? ` ${tone}` : ""}`;
     badge.textContent = String(raw);
     cell.append(badge);
     return;
@@ -340,7 +401,10 @@ function pvApplyDefaults(entity) {
   for (const field of entity.fields) {
     if (field.type === "date" && field.name === "date") pvById(`f-${field.name}`).value = PV_UTIL.todayIso();
   }
-  if (entity.kind === "waybills") pvById("f-number").value = pvNextWaybillNumber(pv.records);
+  if (entity.kind === "waybills") {
+    pvById("f-number").value = pvNextWaybillNumber(pv.records);
+    pvById("f-season").value = pv.settings.season; // the switch decides the starting season
+  }
 }
 
 function pvBuildField(field, value, lists, isNew) {

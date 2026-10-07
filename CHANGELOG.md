@@ -5,6 +5,26 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- **Summer and winter fuel norms.** Every vehicle has two norms (`norm_summer`, `norm_winter`,
+  l per 100 km) instead of one. A single **Лето / Зима switch** (in the headers of the module
+  page and of every record page) changes everything at once:
+  - the "Действует" norm shown for every vehicle;
+  - the season of every **open** waybill (closed waybills keep the season they were issued in, so
+    switching never rewrites history or the deviation of finished trips);
+  - the default season of new waybills.
+  Each waybill stores its own season, shown as a badge and editable in the form; its norm,
+  deviation and overrun warning are computed with the norm of that season. A vehicle without a
+  norm for the season is reported ("Для машины не задана норма на сезон …") instead of silently
+  using the other season's value.
+- The season is stored in `Примавтодор/settings.json` and survives restarts. Until someone
+  switches it by hand it follows the calendar (November–March = winter), marked as
+  `source: "calendar"`. API: `GET /api/primavtodor/settings`, `PUT /api/primavtodor/settings/season`.
+
+### Changed
+- vehicle records written by the previous version (one `norm_per_100km`) are upgraded on read:
+  both seasonal norms get the old value; waybills without a season count as summer.
+
+### Added
 - **Путевые листы** — a new Примавтодор section (10 sections now) and, together with
   **ГСМ**, **Сотрудники**, **Гараж** and **Табель**, real linked data instead of plain folders:
   - a driver (employee) has a **fuel card with a number** and an **assigned vehicle**;

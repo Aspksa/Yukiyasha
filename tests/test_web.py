@@ -451,7 +451,7 @@ def _post(client: TestClient, kind: str, payload: dict[str, object]):
 def _chain(client: TestClient) -> dict[str, str]:
     """vehicle -> driver (card + car) -> waybill; returns the ids."""
     vehicle = _post(client, "vehicles", {"plate": "А123ВБ125", "model": "КАМАЗ",
-                                         "norm_per_100km": 30}).json()
+                                         "norm_summer": 30, "norm_winter": 36}).json()
     driver = _post(client, "employees", {"full_name": "Иванов И.И.", "is_driver": True,
                                          "fuel_card_number": "7001", "vehicle_id": vehicle["id"],
                                          "personnel_number": "1"}).json()
@@ -495,12 +495,12 @@ def test_primavtodor_full_chain_over_http(client: TestClient) -> None:
 
 
 def test_primavtodor_validation_is_422_with_field_messages(client: TestClient) -> None:
-    response = _post(client, "vehicles", {"plate": "", "model": "x", "norm_per_100km": "abc"})
+    response = _post(client, "vehicles", {"plate": "", "model": "x", "norm_summer": "abc"})
 
     assert response.status_code == 422
     detail = response.json()["detail"]
     assert detail["message"]
-    assert set(detail["fields"]) == {"plate", "norm_per_100km"}
+    assert set(detail["fields"]) == {"plate", "norm_summer"}
 
 
 def test_primavtodor_conflict_not_found_and_unknown_kind(client: TestClient) -> None:
@@ -609,3 +609,39 @@ def test_primavtodor_schema_carries_section_paths(client: TestClient) -> None:
         "title": "Табель",
         "path": "projects/work/Примавтодор/Табель",
     }
+
+
+# ----- summer / winter switch over HTTP -----
+
+def test_season_switch_changes_every_active_norm_at_once(client: TestClient) -> None:
+    ids = _chain(client)  # vehicle: summer 30, winter 36; one open waybill
+
+    assert client.put(f"{BASE}/settings/season", json={"season": "summer"}).status_code == 200
+    summer = client.get(f"{BASE}/records/vehicles/{ids['vehicle']}").json()
+    assert summer["computed"]["norm_active"] == 30
+
+    response = client.put(f"{BASE}/settings/season", json={"season": "winter"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["season"] == "winter" and body["season_label"] == "Зима"
+    assert body["source"] == "manual" and body["updated_waybills"] == 1
+    winter = client.get(f"{BASE}/records/vehicles/{ids['vehicle']}").json()
+    assert winter["computed"]["norm_active"] == 36
+    assert winter["computed"]["norm_active_season"] == "Зима"
+    waybill = client.get(f"{BASE}/records/waybills/{ids['waybill']}").json()
+    assert waybill["values"]["season"] == "winter"
+    assert client.get(f"{BASE}/settings").json()["season"] == "winter"
+    schema = client.get(f"{BASE}/schema").json()
+    assert schema["settings"]["season"] == "winter"
+    assert [s["value"] for s in schema["seasons"]] == ["summer", "winter"]
+
+
+def test_season_switch_validation_and_origin(client: TestClient) -> None:
+    bad = client.put(f"{BASE}/settings/season", json={"season": "autumn"})
+    evil = client.put(f"{BASE}/settings/season", json={"season": "winter"},
+                      headers={"Origin": "http://evil.example"})
+
+    assert bad.status_code == 422 and "season" in bad.json()["detail"]["fields"]
+    assert evil.status_code == 403
+    assert client.get(f"{BASE}/settings").json()["source"] == "calendar"  # nothing was stored

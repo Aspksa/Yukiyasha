@@ -73,7 +73,13 @@ timesheet = waybills (auto "Я") + manual marks per month
   fuel, uniqueness); deleting a referenced record is refused (`409`);
 - computed values (distance, consumption, norm, deviation, amount) are derived on read and never
   stored, so they cannot go stale; the fuel record keeps the card number it was issued on;
-- the timesheet stores only manual marks (`Табель/<ГГГГ-ММ>.json`).
+- the timesheet stores only manual marks (`Табель/<ГГГГ-ММ>.json`);
+- fuel norms are seasonal: a vehicle has `norm_summer` and `norm_winter`; a waybill stores its own
+  `season` and is computed with that season's norm. The module-wide switch
+  (`Примавтодор/settings.json`) only changes the *active* norm shown for vehicles, the default for
+  new waybills and the season of open waybills, never of closed ones (history stays exact);
+- records written by earlier versions are upgraded in memory when read (`RecordStore._upgrade`)
+  and persisted in the new shape the next time they are saved.
 
 Note: a failing module start rolls back every module started before it (registry semantics), so a
 file (not a folder) named like a section degrades the whole runtime.

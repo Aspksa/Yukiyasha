@@ -584,6 +584,41 @@ dialog.dlg-wide .dlg-actions {
 .btn-ghost-danger:hover:not(:disabled) { background: var(--danger-soft); }
 dialog select { width: 100%; padding: 9px 12px; color: var(--text); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; }
 
+/* summer / winter switch for every fuel norm */
+.season-slot { display: flex; align-items: center; }
+.season-switch { display: inline-flex; align-items: center; gap: 10px; }
+.season-switch .season-label { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.season-switch .segments { display: inline-flex; padding: 3px; gap: 3px; background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 12px; }
+.season-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  transition: background .15s, color .15s;
+}
+.season-btn:hover:not([aria-checked="true"]) { color: var(--text); background: var(--surface-hover); }
+.season-btn[aria-checked="true"] { color: var(--sc); background: color-mix(in oklab, var(--sc) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--sc) 45%, transparent); cursor: default; }
+.season-btn[data-season="summer"] { --sc: oklch(var(--sec-l) var(--sec-c) 75); }
+.season-btn[data-season="winter"] { --sc: oklch(var(--sec-l) var(--sec-c) 235); }
+.season-btn:disabled { opacity: .6; cursor: progress; }
+.badge.warm { color: oklch(var(--sec-l) var(--sec-c) 75); background: color-mix(in oklab, oklch(var(--sec-l) var(--sec-c) 75) 15%, transparent); }
+.badge.cold { color: oklch(var(--sec-l) var(--sec-c) 235); background: color-mix(in oklab, oklch(var(--sec-l) var(--sec-c) 235) 15%, transparent); }
+
+@media (max-width: 560px) {
+  .season-slot { width: 100%; }
+  .season-switch { width: 100%; justify-content: space-between; }
+  .season-switch .season-label { display: none; }
+  .season-switch .segments { flex: 1; }
+  .season-btn { flex: 1; justify-content: center; }
+}
+
 /* timesheet */
 .month-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 16px 0 10px; }
 .month-bar input[type="month"] { padding: 8px 12px; color: var(--text); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; min-height: 38px; }

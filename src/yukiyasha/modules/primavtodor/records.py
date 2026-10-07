@@ -36,6 +36,7 @@ from yukiyasha.modules.primavtodor.schema import (
     Field,
 )
 from yukiyasha.modules.primavtodor.sections import SECTIONS_BY_ID
+from yukiyasha.modules.primavtodor.settings import SEASON_LABELS, ModuleSettings
 
 ID_RE = re.compile(r"^[a-z]+-[0-9a-f]{8}$")
 META_KEYS = {"id", "created_at", "updated_at"}
@@ -62,6 +63,14 @@ def _round(value: float, digits: int = 2) -> float:
     return round(value + 0.0, digits)
 
 
+def norm_rate(vehicle: dict[str, object] | None, season: str) -> float | None:
+    """Fuel norm (l per 100 km) of a vehicle for a season; None when it is not set."""
+    if not vehicle:
+        return None
+    rate = _num(vehicle.get("norm_winter" if season == "winter" else "norm_summer"))
+    return rate if rate else None
+
+
 def format_date(value: object) -> str:
     try:
         return date.fromisoformat(str(value)).strftime("%d.%m.%Y")
@@ -85,11 +94,20 @@ class RecordStore:
             raise RecordNotFoundError(record_id)
         return f"{self._dir}/{record_id}.json"
 
-    @staticmethod
-    def _parse(text: str, record_id: str) -> dict[str, object]:
+    def _parse(self, text: str, record_id: str) -> dict[str, object]:
         data = json.loads(text)
         if not isinstance(data, dict) or data.get("id") != record_id:
             raise ValueError("record id does not match its file name")
+        return self._upgrade(data)
+
+    def _upgrade(self, data: dict[str, object]) -> dict[str, object]:
+        """Bring records written by earlier versions to the current shape (in memory)."""
+        if self.entity.kind == KIND_VEHICLES and "norm_per_100km" in data:
+            legacy = data.pop("norm_per_100km")  # one norm used to cover the whole year
+            data.setdefault("norm_summer", legacy)
+            data.setdefault("norm_winter", legacy)
+        if self.entity.kind == KIND_WAYBILLS and not data.get("season"):
+            data["season"] = "summer"  # history must not change when the season is switched
         return data
 
     def load_all(self) -> tuple[list[dict[str, object]], list[str]]:
@@ -133,9 +151,18 @@ class RecordStore:
 class _Ctx:
     """Per-request cache of all records, so relations are resolved with one read per kind."""
 
-    def __init__(self, stores: dict[str, RecordStore]) -> None:
+    def __init__(self, stores: dict[str, RecordStore], settings: ModuleSettings) -> None:
         self._stores = stores
+        self._settings = settings
         self._cache: dict[str, dict[str, dict[str, object]]] = {}
+        self._season: str | None = None
+
+    @property
+    def season(self) -> str:
+        """The season selected by the module-wide switch."""
+        if self._season is None:
+            self._season = self._settings.season()
+        return self._season
 
     def all(self, kind: str) -> dict[str, dict[str, object]]:
         if kind not in self._cache:
@@ -150,8 +177,12 @@ class _Ctx:
 class Records:
     """CRUD with validation and relation checks for the Примавтодор record kinds."""
 
-    def __init__(self, disk: DiskModule) -> None:
+    def __init__(self, disk: DiskModule, settings: ModuleSettings | None = None) -> None:
+        self.settings = settings or ModuleSettings(disk)
         self._stores = {kind: RecordStore(disk, entity) for kind, entity in ENTITIES.items()}
+
+    def _ctx(self) -> _Ctx:
+        return _Ctx(self._stores, self.settings)
 
     # ----- public API -----
 
@@ -167,12 +198,12 @@ class Records:
     def snapshot(self, kind: str) -> list[dict[str, object]]:
         """Raw stored records of a kind (for other parts of the module, e.g. the timesheet)."""
         self.entity(kind)
-        return list(_Ctx(self._stores).all(kind).values())
+        return list(self._ctx().all(kind).values())
 
     def list_records(self, kind: str) -> dict[str, object]:
         entity = self.entity(kind)
         records, problems = self._stores[kind].load_all()
-        ctx = _Ctx(self._stores)
+        ctx = self._ctx()
         records.sort(
             key=lambda record: self._sort_key(kind, record),
             reverse=kind in (KIND_WAYBILLS, KIND_FUEL),
@@ -185,12 +216,12 @@ class Records:
 
     def get(self, kind: str, record_id: str) -> dict[str, object]:
         entity = self.entity(kind)
-        return self._view(entity, self._stores[kind].load(record_id), _Ctx(self._stores))
+        return self._view(entity, self._stores[kind].load(record_id), self._ctx())
 
     def create(self, kind: str, payload: dict[str, object]) -> dict[str, object]:
         entity = self.entity(kind)
         store = self._stores[kind]
-        values = self._clean(entity, payload, _Ctx(self._stores), own_id=None)
+        values = self._clean(entity, payload, self._ctx(), own_id=None)
         now = _now()
         record = {"id": store.new_id(), "created_at": now, "updated_at": now, **values}
         try:
@@ -198,13 +229,13 @@ class Records:
         except DiskConflictError:  # an id collision is practically impossible; retry once
             record["id"] = store.new_id()
             store.save(record, overwrite=False)
-        return self._view(entity, record, _Ctx(self._stores))
+        return self._view(entity, record, self._ctx())
 
     def update(self, kind: str, record_id: str, payload: dict[str, object]) -> dict[str, object]:
         entity = self.entity(kind)
         store = self._stores[kind]
         existing = store.load(record_id)
-        values = self._clean(entity, payload, _Ctx(self._stores), own_id=record_id)
+        values = self._clean(entity, payload, self._ctx(), own_id=record_id)
         record = {
             "id": record_id,
             "created_at": existing.get("created_at") or _now(),
@@ -212,19 +243,37 @@ class Records:
             **values,
         }
         store.save(record, overwrite=True)
-        return self._view(entity, record, _Ctx(self._stores))
+        return self._view(entity, record, self._ctx())
 
     def delete(self, kind: str, record_id: str) -> None:
         self.entity(kind)
         store = self._stores[kind]
         store.load(record_id)  # NotFound if it does not exist
-        references = self._references(kind, record_id, _Ctx(self._stores))
+        references = self._references(kind, record_id, self._ctx())
         if references:
             shown = ", ".join(references[:5]) + (" …" if len(references) > 5 else "")
             raise RecordInUseError(
                 f"Нельзя удалить: на запись ссылаются другие данные ({shown})", references
             )
         store.delete(record_id)
+
+    def apply_season(self, season: str) -> dict[str, object]:
+        """Switch the module-wide season.
+
+        Open waybills follow the switch; closed ones keep the season they were issued in, so
+        switching never rewrites history.
+        """
+        settings = self.settings.set_season(season)
+        store = self._stores[KIND_WAYBILLS]
+        updated = 0
+        for waybill in store.load_all()[0]:
+            is_open = waybill.get("odometer_in") is None and waybill.get("fuel_in") is None
+            if is_open and waybill.get("season") != season:
+                waybill["season"] = season
+                waybill["updated_at"] = _now()
+                store.save(waybill, overwrite=True)
+                updated += 1
+        return {**settings, "updated_waybills": updated}
 
     # ----- validation -----
 
@@ -233,6 +282,9 @@ class Records:
     ) -> dict[str, object]:
         errors: dict[str, str] = {}
         values: dict[str, object] = {}
+        if entity.kind == KIND_WAYBILLS and _blank(payload.get("season")):
+            # A waybill that does not say otherwise starts in the current season.
+            payload = {**payload, "season": ctx.season}
         for item in entity.fields:
             values[item.name] = self._parse(item, payload.get(item.name), errors)
         self._normalize(entity.kind, values)
@@ -515,6 +567,8 @@ class Records:
                 if e.get("vehicle_id") == record_id
             ]
             computed["drivers"] = ", ".join(sorted(drivers, key=str.casefold)) or "—"
+            computed["norm_active"] = norm_rate(record, ctx.season)
+            computed["norm_active_season"] = SEASON_LABELS[ctx.season]
 
         elif kind == KIND_WAYBILLS:
             computed, warnings = self._compute_waybill(record, ctx)
@@ -559,12 +613,17 @@ class Records:
 
         driver = ctx.get(KIND_EMPLOYEES, record.get("driver_id"))
         vehicle = ctx.get(KIND_VEHICLES, record.get("vehicle_id"))
-        rate = _num(vehicle.get("norm_per_100km")) if vehicle else None
+        season = str(record.get("season") or "summer")
+        rate = norm_rate(vehicle, season)
         norm = _round(distance * rate / 100, 3) if distance is not None and rate else None
         deviation = (
             _round(consumption - norm, 3) if consumption is not None and norm is not None else None
         )
 
+        if closed and vehicle is not None and rate is None:
+            warnings.append(
+                f"Для машины не задана норма на сезон «{SEASON_LABELS.get(season, season)}»"
+            )
         if driver is not None and not driver.get("fuel_card_number"):
             warnings.append("У водителя не закреплена топливная карта")
         assigned = driver.get("vehicle_id") if driver else None
@@ -577,6 +636,8 @@ class Records:
 
         computed = {
             "status": "Закрыт" if closed else "Открыт",
+            "season_label": SEASON_LABELS.get(season, season),
+            "norm_rate": rate,
             "distance": distance,
             "fuel_issued": issued,
             "consumption": consumption,

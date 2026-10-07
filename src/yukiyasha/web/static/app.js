@@ -790,6 +790,7 @@ async function loadModule() {
     sectionByPath.clear();
     for (const section of sections) sectionByPath.set(section.path, section.id);
     renderModuleSections(sections);
+    pvRenderSeasonSwitch();
   } catch (error) {
     if (isAbort(error)) return;
     showModuleError(describeError(error));

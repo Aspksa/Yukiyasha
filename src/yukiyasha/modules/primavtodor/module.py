@@ -19,6 +19,7 @@ from yukiyasha.modules.primavtodor.sections import (
     SECTIONS_BY_ID,
     Section,
 )
+from yukiyasha.modules.primavtodor.settings import SEASONS, ModuleSettings
 from yukiyasha.modules.primavtodor.timesheet import Timesheet
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.version import get_version
@@ -41,7 +42,8 @@ class PrimavtodorModule:
 
     def __init__(self, disk: DiskModule) -> None:
         self._disk = disk
-        self.data = Records(disk)  # employees, vehicles, waybills, fuel
+        self.settings = ModuleSettings(disk)
+        self.data = Records(disk, self.settings)  # employees, vehicles, waybills, fuel
         self.timesheet = Timesheet(disk, self.data)
         self._state = ModuleState.REGISTERED
         self._last_error: str | None = None
@@ -106,6 +108,8 @@ class PrimavtodorModule:
                 "path": timesheet.path,
             },
             "timesheet_codes": self.timesheet.codes(),
+            "seasons": [{"value": value, "label": label} for value, label in SEASONS],
+            "settings": self.settings.load(),
         }
 
     # ----- sections and documents (all data lives on the disk) -----

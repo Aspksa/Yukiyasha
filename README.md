@@ -4,14 +4,14 @@ Yukiyasha is a modular AI-oriented platform foundation with a local web interfac
 
 ## Current version
 
-**v0.7.0 — In-chat proposal review**
+**v0.8.0 — Rich document cards in chat**
 
 The current release provides:
 - modular Python core and module registry with explicit lifecycle and health;
 - sandboxed local **Диск Yukiyasha** and a browser workspace (file manager, editor, system page);
 - the **Примавтодор** module: waybills, fuel (ГСМ), employees with fuel cards and vehicles, garage,
   timesheet, seasonal fuel norms with one summer/winter switch, document folders;
-- an **AI assistant** with audited read access, long-term memory and human-approved write proposals;
+- an **AI assistant** with audited read access, long-term memory, rich document cards and human-approved write proposals;
 - FastAPI web/API layer, automated tests and two-tier CI.
 
 ## Requirements
@@ -104,8 +104,10 @@ as ordinary environment variables (they win over the file). `http://` is accepte
   written to a log, returned by the API or shown in the UI, and it is scrubbed from error texts.
 - **Every message is sent to the provider** together with the persona and the earlier messages of
   the conversation. For questions about Примавтодор, a compatible provider can request read-only
-  local tools for waybills, fuel, employees, vehicles, timesheets and settings. Tool results are
-  also sent to the provider. Phone numbers, personnel numbers and fuel-card numbers are masked
+  local tools for waybills, fuel, employees, vehicles, timesheets, settings and document
+  metadata. Tool results are also sent to the provider. **Document contents are not sent merely
+  to render a card**: card previews are loaded locally by the browser from Yukiyasha. Phone
+  numbers, personnel numbers and fuel-card numbers are masked
   before they leave Yukiyasha. Providers that do not support standard OpenAI tools fall back to
   ordinary chat.
 - By default the assistant speaks as Юкияша (a bundled character pack); examples of her tone are
@@ -116,9 +118,11 @@ as ordinary environment variables (they win over the file). `http://` is accepte
   a validated **proposal**. A proposal changes nothing until a person separately approves its id
   through the local API. Update/delete proposals capture the source record fingerprint and become
   `stale` instead of overwriting data that changed after the proposal was created.
-- Proposal lifecycle is transparent through the local API and now also appears directly in the
-  assistant conversation as review cards with old/new diff, status, and local approve/reject
-  controls for pending proposals. No global action buttons were added.
+- Proposal lifecycle is transparent through the local API and appears directly in the assistant
+  conversation as review cards with old/new diff, status, and local approve/reject controls.
+- Documents found by the assistant are shown as **mini-document cards**, not raw paths or links:
+  human title, section, format, size, local text preview and an «Открыть» action into the existing
+  Yukiyasha editor. The document path stays internal to the UI.
 - Tool disclosures and proposal lifecycle events are written to
   `system/audit/YYYY-MM-DD/*.json` without copying the business payload itself.
 - **Long-term memory** is separate from chat history and stored as JSON under

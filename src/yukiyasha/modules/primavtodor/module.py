@@ -16,10 +16,12 @@ from yukiyasha.modules.primavtodor.errors import (
     UnknownSectionError,
 )
 from yukiyasha.modules.primavtodor.fuel_import import import_statement
+from yukiyasha.modules.primavtodor.fuelcard import FuelCard, fill_fuel_cards
 from yukiyasha.modules.primavtodor.printing import WaybillForm3, fill_form3
-from yukiyasha.modules.primavtodor.records import Records
+from yukiyasha.modules.primavtodor.records import Records, norm_rate
 from yukiyasha.modules.primavtodor.schema import (
     KIND_EMPLOYEES,
+    KIND_FUEL,
     KIND_VEHICLES,
     KIND_WAYBILLS,
     WAYBILL_FORMS,
@@ -234,3 +236,64 @@ class PrimavtodorModule:
     ) -> dict[str, object]:
         """Preview (``apply=False``) or load the provider's statement into the fuel section."""
         return import_statement(self.data, content, filename, apply=apply)
+
+    # ----- monthly fuel card -----
+
+    def fuel_cards(self, vehicle_id: str, month: str) -> tuple[bytes, str]:
+        """The vehicle's «Карточка расхода ГСМ» for a month (``ГГГГ-ММ``): a sheet per driver."""
+        try:
+            first = date.fromisoformat(f"{month}-01")
+        except ValueError:
+            raise PrintNotAvailableError("Месяц в формате ГГГГ-ММ, например 2026-10") from None
+        vehicle = self.data.get(KIND_VEHICLES, vehicle_id)["values"]
+        waybills = [
+            w
+            for w in self.data.snapshot(KIND_WAYBILLS)
+            if w.get("vehicle_id") == vehicle_id and str(w.get("date", "")).startswith(month)
+        ]
+        if not waybills:
+            raise PrintNotAvailableError(f"За {month} нет путевых листов на эту машину")
+        waybills.sort(key=lambda w: (str(w.get("date")), str(w.get("number"))))
+        fuel = self.data.snapshot(KIND_FUEL)
+
+        by_driver: dict[str, list[dict[str, object]]] = {}
+        for waybill in waybills:
+            by_driver.setdefault(str(waybill.get("driver_id")), []).append(waybill)
+
+        cards: list[FuelCard] = []
+        vehicle_name = f"{vehicle.get('model') or ''} {vehicle.get('plate') or ''}".strip()
+        for driver_id, driver_waybills in by_driver.items():
+            driver = self.data.get(KIND_EMPLOYEES, driver_id)["values"]
+            ids = {w["id"] for w in driver_waybills}
+            fills = sorted(
+                (f for f in fuel if f.get("waybill_id") in ids),
+                key=lambda f: (str(f.get("date")), str(f.get("time") or "")),
+            )
+            distance = consumption = 0.0
+            norms: list[float] = []
+            rates: set[float | None] = set()
+            for waybill in driver_waybills:
+                view = self.data.get(KIND_WAYBILLS, str(waybill["id"]))["computed"]
+                if view.get("distance") is None:
+                    continue  # an open waybill has no mileage or consumption yet
+                distance += float(view["distance"])
+                consumption += float(view.get("consumption") or 0)
+                norms.append(float(view.get("norm") or 0))
+                rates.add(norm_rate(vehicle, str(waybill.get("season") or "summer")))
+            rate = rates.pop() if len(rates) == 1 else None
+            cards.append(
+                FuelCard(
+                    vehicle=vehicle_name,
+                    month=first,
+                    driver=str(driver.get("full_name") or ""),
+                    card_number=str(driver.get("fuel_card_number") or ""),
+                    distance_km=int(distance),
+                    opening=float(driver_waybills[0].get("fuel_out") or 0),
+                    fillups=[float(f.get("liters") or 0) for f in fills],
+                    consumption=consumption,
+                    norm_rate=rate,
+                    norm_total=None if rate is not None else sum(norms),
+                )
+            )
+        plate = re.sub(r"\s+", "", str(vehicle.get("plate") or vehicle_id))
+        return fill_fuel_cards(cards), f"Карточка ГСМ {plate} {month}.xlsx"

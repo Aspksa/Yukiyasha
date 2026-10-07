@@ -813,3 +813,5 @@ dialog input[type="text"] {
   border: 1px solid var(--line-strong); border-radius: 10px; font-size: 13px; color: var(--muted);
 }
 .import-problems li + li { margin-top: 4px; }
+.card-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
+.card-row label { font-weight: 600; }

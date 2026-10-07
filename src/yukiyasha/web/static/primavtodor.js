@@ -162,6 +162,7 @@ function pvWire() {
   pvById("entity-print-settings").addEventListener("click", () => void pvOpenPrintSettings());
   pvById("form-print").addEventListener("submit", (event) => void pvSavePrintSettings(event));
   pvById("record-print").addEventListener("click", () => void pvPrintWaybill());
+  pvById("card-download").addEventListener("click", () => void pvDownloadFuelCard());
 
   pvById("form-record").addEventListener("submit", (event) => void pvSubmit(event));
   pvById("record-delete").addEventListener("click", () => void pvDelete());
@@ -391,6 +392,8 @@ async function pvOpenForm(record) {
   pvById("record-error").hidden = true;
   pvById("record-delete").hidden = !record;
   pvById("record-print").hidden = !(record && entity.kind === "waybills");
+  pvById("record-card").hidden = !(record && entity.kind === "vehicles");
+  if (!pvById("card-month").value) pvById("card-month").value = PV_UTIL.currentMonth();
 
   const box = pvById("record-fields");
   box.replaceChildren(
@@ -794,6 +797,27 @@ async function pvPrintWaybill() {
   try {
     const name = await pvDownload(`/api/primavtodor/waybills/${encodeURIComponent(record.id)}/print`);
     toast(`Бланк сохранён: ${name}`);
+  } catch (error) {
+    pvShowFormError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function pvDownloadFuelCard() {
+  const { record } = pv.editing ?? {};
+  const month = pvById("card-month").value;
+  if (!record) return;
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    pvShowFormError(new Error("Выберите месяц"));
+    return;
+  }
+  const button = pvById("card-download");
+  button.disabled = true;
+  try {
+    const query = new URLSearchParams({ month });
+    const name = await pvDownload(`/api/primavtodor/vehicles/${encodeURIComponent(record.id)}/fuel-card?${query}`);
+    toast(`Карточка сохранена: ${name}`);
   } catch (error) {
     pvShowFormError(error);
   } finally {

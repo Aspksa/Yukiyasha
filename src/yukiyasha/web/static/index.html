@@ -347,6 +347,14 @@
       <div class="warn-list" id="record-warnings" hidden></div>
       <div class="form-grid" id="record-fields"></div>
       <dl class="details" id="record-details" hidden></dl>
+      <div class="card-row" id="record-card" hidden>
+        <label for="card-month">Карточка расхода ГСМ за месяц</label>
+        <input type="month" id="card-month">
+        <button class="btn" type="button" id="card-download">
+          <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+          <span>Скачать (.xlsx)</span>
+        </button>
+      </div>
       <p class="dlg-error" id="record-error" role="alert" hidden></p>
       <div class="dlg-actions dlg-actions-split">
         <button class="btn btn-ghost-danger" type="button" id="record-delete" hidden>Удалить</button>

@@ -331,6 +331,16 @@ def create_app(
             lambda: runtime.primavtodor.import_fuel_statement(content, filename, apply=apply)
         )
 
+    @application.get("/api/primavtodor/vehicles/{vehicle_id}/fuel-card")
+    def primavtodor_fuel_card(vehicle_id: str, month: str = Query(max_length=7)) -> Response:
+        """Monthly fuel card of a vehicle as an .xlsx (a sheet per driver)."""
+        content, name = primavtodor_call(lambda: runtime.primavtodor.fuel_cards(vehicle_id, month))
+        return Response(
+            content=content,
+            media_type=XLSX_TYPE,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
+        )
+
     @application.get("/api/primavtodor/waybills/{waybill_id}/print")
     def primavtodor_print_waybill(waybill_id: str) -> Response:
         content, name = primavtodor_call(lambda: runtime.primavtodor.print_waybill(waybill_id))

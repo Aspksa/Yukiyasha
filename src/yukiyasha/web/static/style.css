@@ -24,6 +24,8 @@
   --danger: #ff7f8f;
   --danger-soft: rgba(255, 127, 143, .12);
   --shadow: 0 18px 48px rgba(0, 0, 0, .45);
+  --sec-l: .78; /* lightness / chroma of section colours (oklch), tuned per theme */
+  --sec-c: .13;
 
   --radius: 14px;
   --radius-sm: 10px;
@@ -51,6 +53,8 @@
     --danger: #c42a43;
     --danger-soft: rgba(196, 42, 67, .09);
     --shadow: 0 18px 48px rgba(20, 24, 40, .16);
+    --sec-l: .5;
+    --sec-c: .16;
   }
 }
 
@@ -457,8 +461,8 @@ h1 { margin: 0; font-size: clamp(24px, 3vw, 30px); letter-spacing: -.02em; line-
 }
 .section-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
 .section-card:active { transform: translateY(1px); }
-.section-card .card-title { display: flex; align-items: center; gap: 10px; font-weight: 650; }
-.section-card .card-title .icon { color: var(--accent); }
+.section-card .card-head { display: flex; align-items: center; gap: 12px; }
+.section-card .card-title { font-weight: 650; line-height: 1.25; }
 .section-card .card-desc { color: var(--muted); font-size: 13.5px; }
 .section-card .card-count { margin-top: auto; color: var(--faint); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .section-card .card-count.filled { color: var(--accent); font-weight: 600; }
@@ -466,6 +470,39 @@ h1 { margin: 0; font-size: clamp(24px, 3vw, 30px); letter-spacing: -.02em; line-
 .module-error { padding: 28px 8px; color: var(--muted); }
 .module-error strong { display: block; color: var(--text); margin-bottom: 4px; }
 .module-error .btn { margin-top: 12px; }
+
+/* Section colours: one hue per Примавтодор section, shared by the tile, hover and folder icons. */
+[data-sec] { --sec-color: oklch(var(--sec-l) var(--sec-c) var(--h, 270)); }
+[data-sec="timesheet"] { --h: 255; }
+[data-sec="employees"] { --h: 305; }
+[data-sec="garage"] { --h: 55; }
+[data-sec="fuel"] { --h: 85; }
+[data-sec="contracts"] { --h: 155; }
+[data-sec="invoice_offer"] { --h: 190; }
+[data-sec="memos"] { --h: 225; }
+[data-sec="orders"] { --h: 20; }
+[data-sec="directives"] { --h: 340; }
+
+.sec-tile {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  color: var(--sec-color, var(--accent));
+  background: color-mix(in oklab, var(--sec-color, var(--accent)) 15%, transparent);
+  border: 1px solid color-mix(in oklab, var(--sec-color, var(--accent)) 32%, transparent);
+  transition: transform .15s, background .15s;
+}
+.sec-tile .icon { width: 25px; height: 25px; }
+.section-card[data-sec]:hover {
+  border-color: color-mix(in oklab, var(--sec-color) 55%, transparent);
+  background: color-mix(in oklab, var(--sec-color) 9%, transparent);
+}
+.section-card[data-sec]:hover .sec-tile { transform: scale(1.06) rotate(-3deg); background: color-mix(in oklab, var(--sec-color) 24%, transparent); }
+.section-card .card-count.filled { color: var(--sec-color, var(--accent)); }
+.entry[data-sec] .icon { color: var(--sec-color); }
 
 /* ---------- dialogs & toasts ---------- */
 

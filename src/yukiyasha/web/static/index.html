@@ -3,85 +3,193 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#080a10">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0b0d13" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f5f6fa" media="(prefers-color-scheme: light)">
   <title>Yukiyasha</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%230b0d13%27/%3E%3Ctext x=%2716%27 y=%2723%27 font-size=%2720%27 text-anchor=%27middle%27 fill=%27%239d93ff%27%3E雪%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <main class="shell">
-    <header class="topbar">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z M14 3v5h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-work" viewBox="0 0 24 24"><path d="M4 8h16v11H4V8Zm5 0V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V8M4 13h16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1v-7.5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-disk" viewBox="0 0 24 24"><ellipse cx="12" cy="6.5" rx="7.5" ry="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4.5 6.5v11c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-11M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-system" viewBox="0 0 24 24"><path d="M5 5h14v10H5V5Zm4 14h6M12 15v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2m-8 0 1 12h10l1-12M10 11v5m4-5v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5V4Zm3 0v5h7V4M8 20v-6h8v6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><path d="M6 11h12v9H6v-9Zm3 0V8a3 3 0 0 1 6 0v3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  </svg>
+
+  <a class="skip-link" href="#main">К содержимому</a>
+
+  <div class="app">
+    <aside class="sidebar">
       <div class="brand">
         <div class="sigil" aria-hidden="true">雪</div>
-        <div>
+        <div class="brand-text">
           <strong>Yukiyasha</strong>
-          <span>Core · Modules · Disk</span>
+          <span>Личное рабочее пространство</span>
         </div>
       </div>
-      <div class="status" id="status"><i></i><span>Подключение…</span></div>
-    </header>
 
-    <nav class="main-menu" aria-label="Главное меню">
-      <button class="menu-item active" data-project-path="projects/work" type="button">
-        <span class="menu-icon">▣</span>
-        <span><strong>Рабочие проекты</strong><small>Работа, код и задачи</small></span>
-      </button>
-      <button class="menu-item" data-project-path="projects/home" type="button">
-        <span class="menu-icon">⌂</span>
-        <span><strong>Домашние проекты</strong><small>Личные идеи и дела</small></span>
-      </button>
-    </nav>
+      <nav class="nav" aria-label="Разделы">
+        <button class="nav-item" type="button" data-section="projects/work" aria-current="page">
+          <svg class="icon" aria-hidden="true"><use href="#i-work"/></svg>
+          <span><strong>Рабочие</strong><small>Работа и код</small></span>
+        </button>
+        <button class="nav-item" type="button" data-section="projects/home">
+          <svg class="icon" aria-hidden="true"><use href="#i-home"/></svg>
+          <span><strong>Домашние</strong><small>Личное и идеи</small></span>
+        </button>
+        <button class="nav-item" type="button" data-section="">
+          <svg class="icon" aria-hidden="true"><use href="#i-disk"/></svg>
+          <span><strong>Весь диск</strong><small>Корень хранилища</small></span>
+        </button>
+        <button class="nav-item" type="button" data-section="system">
+          <svg class="icon" aria-hidden="true"><use href="#i-system"/></svg>
+          <span><strong>Система</strong><small>Ядро и модули</small></span>
+        </button>
+      </nav>
 
-    <section class="hero">
-      <p class="eyebrow">YUKIYASHA WORKSPACE</p>
-      <h1 id="workspace-title">Рабочие проекты</h1>
-      <p class="lead" id="workspace-subtitle">
-        Файлы и будущие проекты хранятся внутри защищённого Диска Yukiyasha.
-      </p>
-      <div class="actions">
-        <button id="refresh-projects" type="button">Обновить</button>
-        <a href="/docs">API Docs</a>
-      </div>
-    </section>
-
-    <section class="project-panel" aria-label="Файлы проекта">
-      <div class="project-head">
-        <div>
-          <span>ДИСК YUKIYASHA</span>
-          <strong id="project-path">projects/work</strong>
+      <div class="sidebar-foot">
+        <div class="status" id="status" role="status" aria-live="polite">
+          <i aria-hidden="true"></i><span>Подключение…</span>
         </div>
-        <span class="project-count" id="project-count">0 объектов</span>
+        <a class="foot-link" href="/docs" target="_blank" rel="noopener">Документация API</a>
       </div>
-      <div class="project-list" id="project-list">
-        <div class="empty-state">Загрузка…</div>
-      </div>
-    </section>
+    </aside>
 
-    <section class="grid" aria-label="Состояние Yukiyasha">
-      <article class="card">
-        <span>Runtime</span>
-        <strong id="runtime-state">—</strong>
-        <p>Состояние главного процесса.</p>
-      </article>
-      <article class="card">
-        <span>Version</span>
-        <strong id="version">—</strong>
-        <p>Версия Yukiyasha.</p>
-      </article>
-      <article class="card">
-        <span>Environment</span>
-        <strong id="environment">—</strong>
-        <p>Активная среда выполнения.</p>
-      </article>
-    </section>
+    <main class="main" id="main" tabindex="-1" data-view="list">
+      <section id="view-files" class="files" aria-label="Файлы">
+        <header class="page-head">
+          <nav class="crumbs" id="crumbs" aria-label="Путь"></nav>
+          <div class="head-actions">
+            <button class="btn" id="btn-refresh" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>
+              <span>Обновить</span>
+            </button>
+            <button class="btn btn-primary" id="btn-new" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
+              <span>Новый файл</span>
+            </button>
+          </div>
+        </header>
 
-    <section class="console">
-      <div class="console-head">
-        <span>CORE TELEMETRY</span>
-        <button id="refresh" type="button" aria-label="Обновить">↻</button>
+        <div class="split">
+          <section class="pane pane-list" aria-label="Список файлов">
+            <div class="toolbar">
+              <label class="search">
+                <span class="sr-only">Фильтр по имени</span>
+                <input id="filter" type="search" placeholder="Фильтр по имени" autocomplete="off">
+              </label>
+              <span class="count" id="count" aria-live="polite"></span>
+            </div>
+            <ul class="entries" id="entries"></ul>
+            <div class="empty" id="list-empty" hidden></div>
+          </section>
+
+          <section class="pane pane-editor" aria-label="Редактор">
+            <div class="editor-empty" id="editor-empty">
+              <svg class="icon icon-xl" aria-hidden="true"><use href="#i-file"/></svg>
+              <strong>Файл не выбран</strong>
+              <p>Откройте текстовый файл из списка или создайте новый.</p>
+            </div>
+
+            <div class="editor" id="editor" hidden>
+              <div class="editor-head">
+                <button class="icon-btn only-narrow" id="btn-back" type="button" aria-label="К списку файлов">
+                  <svg class="icon" aria-hidden="true"><use href="#i-back"/></svg>
+                </button>
+                <div class="editor-title">
+                  <strong id="editor-name"></strong>
+                  <small id="editor-path"></small>
+                </div>
+                <span class="pill" id="editor-dirty" hidden>не сохранено</span>
+                <button class="icon-btn danger" id="btn-delete" type="button" aria-label="Удалить файл">
+                  <svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>
+                </button>
+                <button class="btn btn-primary" id="btn-save" type="button" disabled>
+                  <svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>
+                  <span>Сохранить</span>
+                </button>
+              </div>
+              <label class="sr-only" for="editor-text">Содержимое файла</label>
+              <textarea id="editor-text" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+              <div class="editor-foot">
+                <span id="editor-stats"></span>
+                <span class="hint">Ctrl + S — сохранить</span>
+              </div>
+              <div class="editor-error" id="editor-error" role="alert" hidden></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="view-system" class="system" aria-label="Система" hidden>
+        <header class="page-head">
+          <div>
+            <p class="eyebrow">Система</p>
+            <h1>Ядро и модули</h1>
+          </div>
+          <div class="head-actions">
+            <button class="btn" id="btn-system-refresh" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>
+              <span>Обновить</span>
+            </button>
+          </div>
+        </header>
+
+        <div class="stats">
+          <article class="stat"><span>Состояние</span><strong id="runtime-state">—</strong></article>
+          <article class="stat"><span>Версия</span><strong id="version">—</strong></article>
+          <article class="stat"><span>Среда</span><strong id="environment">—</strong></article>
+          <article class="stat"><span>Запущено</span><strong id="started-at">—</strong></article>
+        </div>
+
+        <h2 class="section-title">Модули</h2>
+        <div class="modules" id="modules"></div>
+
+        <details class="telemetry">
+          <summary>Данные ядра (JSON)</summary>
+          <pre id="telemetry">Инициализация…</pre>
+        </details>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="dlg-new" aria-labelledby="dlg-new-title">
+    <form method="dialog" id="form-new">
+      <h2 id="dlg-new-title">Новый файл</h2>
+      <p class="dlg-note" id="dlg-new-note"></p>
+      <label for="new-path">Имя или путь</label>
+      <input id="new-path" name="path" type="text" required autocomplete="off" spellcheck="false" placeholder="notes/idea.md">
+      <p class="dlg-error" id="dlg-new-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit">Создать</button>
       </div>
-      <pre id="telemetry">Инициализация…</pre>
-    </section>
-  </main>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-confirm" aria-labelledby="dlg-confirm-title">
+    <form method="dialog" id="form-confirm">
+      <h2 id="dlg-confirm-title">Подтверждение</h2>
+      <p class="dlg-note" id="dlg-confirm-text"></p>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>Отмена</button>
+        <button class="btn btn-danger" type="submit" id="dlg-confirm-ok">Подтвердить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 
   <script src="/static/app.js" defer></script>
 </body>

@@ -252,3 +252,32 @@ def test_disk_api_nul_path_is_400(
 
     assert response.status_code == 400
     assert "NUL" in response.json()["detail"]
+
+
+def test_workspace_ui_markup_contract(client: TestClient) -> None:
+    """The browser UI relies on these element ids; keep markup and script in sync."""
+    html = client.get("/").text
+    script = client.get("/static/app.js").text
+
+    assert client.get("/static/style.css").status_code == 200
+    for element_id in (
+        "entries",
+        "editor-text",
+        "btn-save",
+        "btn-new",
+        "crumbs",
+        "modules",
+        "dlg-new",
+        "dlg-confirm",
+    ):
+        assert f'id="{element_id}"' in html
+        assert f'"#{element_id}"' in script or f"#{element_id}" in script
+
+
+def test_workspace_ui_uses_only_existing_api_routes(client: TestClient) -> None:
+    script = client.get("/static/app.js").text
+    routes = {route.path for route in client.app.routes}
+
+    for endpoint in ("/api/disk", "/api/disk/file", "/api/runtime", "/api/modules"):
+        assert endpoint in routes
+        assert f'"{endpoint}"' in script

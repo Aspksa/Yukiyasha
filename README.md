@@ -78,8 +78,10 @@ Safety properties:
 - absolute paths, traversal and symlink escapes are rejected;
 - untrusted Host and browser Origin values are rejected for the local API.
 
-The current browser UI can browse the work/home project directories. It does not yet expose
-general file editing or module permission controls.
+The browser UI is a small workspace on top of the disk API: sidebar sections (work, home, whole
+disk, system), breadcrumbs, a text editor (Ctrl+S), file creation and deletion, and a system page
+with module manifests. It supports light/dark themes and phones. Binary files and module
+permission controls are not exposed yet.
 
 ## Quality checks
 

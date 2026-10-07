@@ -12,6 +12,7 @@ from collections import defaultdict
 from datetime import date
 
 from yukiyasha.modules.disk import DiskError, DiskModule
+from yukiyasha.modules.primavtodor import calendar_ru
 from yukiyasha.modules.primavtodor.errors import RecordNotFoundError, RecordValidationError
 from yukiyasha.modules.primavtodor.records import Records, _num
 from yukiyasha.modules.primavtodor.schema import KIND_EMPLOYEES, KIND_WAYBILLS
@@ -20,6 +21,7 @@ from yukiyasha.modules.primavtodor.sections import SECTIONS_BY_ID
 CODES: tuple[tuple[str, str], ...] = (
     ("Я", "Явка"),
     ("В", "Выходной"),
+    ("РВ", "Работа в выходной или праздничный день"),
     ("ОТ", "Отпуск"),
     ("Б", "Больничный"),
     ("К", "Командировка"),
@@ -27,6 +29,8 @@ CODES: tuple[tuple[str, str], ...] = (
 )
 CODE_VALUES = {code for code, _ in CODES}
 AUTO_CODE = "Я"
+OFF_DAY_CODE = "РВ"  # a waybill on a weekend or a holiday
+WORKED_CODES = {AUTO_CODE, OFF_DAY_CODE}
 
 
 class Timesheet:
@@ -97,13 +101,17 @@ class Timesheet:
         marks = self._load_marks(month)
         days = []
         for number_in_month in range(1, days_in_month + 1):
-            weekday = date(year, number, number_in_month).weekday()
+            moment = date(year, number, number_in_month)
+            kind = calendar_ru.day_kind(moment)
             days.append(
                 {
                     "day": number_in_month,
                     "date": f"{prefix}{number_in_month:02d}",
-                    "weekday": weekday,
-                    "weekend": weekday >= 5,
+                    "weekday": moment.weekday(),
+                    "weekend": moment.weekday() >= 5,
+                    "kind": kind,  # work | off | short, from the production calendar
+                    "off": kind == calendar_ru.OFF,
+                    "hours": calendar_ru.working_hours(moment),
                 }
             )
 
@@ -129,7 +137,8 @@ class Timesheet:
                 if manual:
                     code, source = manual, "manual"
                 elif auto:
-                    code, source = AUTO_CODE, "waybill"
+                    code = OFF_DAY_CODE if day["off"] else AUTO_CODE
+                    source = "waybill"
                 else:
                     code, source = "", None
                 if code:
@@ -141,7 +150,7 @@ class Timesheet:
                         "code": code,
                         "source": source,
                         "waybills": auto,
-                        "conflict": bool(manual and auto and manual != AUTO_CODE),
+                        "conflict": bool(manual and auto and manual not in WORKED_CODES),
                     }
                 )
             rows.append(
@@ -153,7 +162,8 @@ class Timesheet:
                     "active": bool(employee.get("active", True)),
                     "cells": cells,
                     "totals": {
-                        "worked": by_code.get(AUTO_CODE, 0),
+                        "worked": by_code.get(AUTO_CODE, 0) + by_code.get(OFF_DAY_CODE, 0),
+                        "off_day_work": by_code.get(OFF_DAY_CODE, 0),
                         "waybills": waybill_total,
                         "distance": distance.get(employee_id, 0),
                         "by_code": dict(by_code),
@@ -165,6 +175,7 @@ class Timesheet:
             "month": month,
             "days": days,
             "codes": self.codes(),
+            "norm": calendar_ru.month_norm(year, number),
             "rows": rows,
         }
 

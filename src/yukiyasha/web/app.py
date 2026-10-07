@@ -50,6 +50,7 @@ from yukiyasha.modules.primavtodor import (
     RecordValidationError,
     StatementError,
     UnknownEntityError,
+    calendar_ru,
 )
 from yukiyasha.modules.primavtodor.settings import CONTROL_MODES, PRINT_FIELDS
 from yukiyasha.modules.proposals import (
@@ -403,6 +404,20 @@ def create_app(
     def primavtodor_set_season(request: SeasonRequest) -> dict[str, object]:
         """One switch for every fuel norm: summer or winter."""
         return primavtodor_call(lambda: runtime.primavtodor.data.apply_season(request.season))
+
+    @application.get("/api/primavtodor/calendar")
+    def primavtodor_calendar_years() -> dict[str, object]:
+        """Years of the production calendar that can be chosen."""
+        return {"years": list(calendar_ru.available_years()), "labels": calendar_ru.KIND_LABELS}
+
+    @application.get("/api/primavtodor/calendar/{year}")
+    def primavtodor_calendar(year: int) -> dict[str, object]:
+        view = calendar_ru.year_view(year)
+        if view is None:
+            raise HTTPException(
+                status_code=404, detail={"message": f"Календаря на {year} год нет в программе"}
+            )
+        return view
 
     @application.get("/api/primavtodor/settings/print")
     def primavtodor_print_settings() -> dict[str, object]:

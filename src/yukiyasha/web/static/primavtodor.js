@@ -156,6 +156,10 @@ function pvWire() {
   pvById("entity-new").addEventListener("click", () => void pvOpenForm(null));
   pvById("entity-filter").addEventListener("input", pvRenderEntity);
 
+  pvById("entity-print-settings").addEventListener("click", () => void pvOpenPrintSettings());
+  pvById("form-print").addEventListener("submit", (event) => void pvSavePrintSettings(event));
+  pvById("record-print").addEventListener("click", () => void pvPrintWaybill());
+
   pvById("form-record").addEventListener("submit", (event) => void pvSubmit(event));
   pvById("record-delete").addEventListener("click", () => void pvDelete());
 
@@ -180,6 +184,7 @@ function pvShowEntity(entity) {
   pvById("entity-tile").dataset.sec = entity.section_id;
   pvById("entity-icon").setAttribute("href", `#${sectionIconId(entity.section_id)}`);
   pvById("entity-filter").value = "";
+  pvById("entity-print-settings").hidden = entity.kind !== "waybills";
   pvById("entity-table").querySelector("tbody").replaceChildren();
   pvById("entity-count").textContent = "";
   pvById("entity-empty").hidden = true;
@@ -381,6 +386,7 @@ async function pvOpenForm(record) {
   pvById("dlg-record-title").textContent = record ? `${entity.singular[0].toUpperCase()}${entity.singular.slice(1)}: ${record.label}` : entity.new_label;
   pvById("record-error").hidden = true;
   pvById("record-delete").hidden = !record;
+  pvById("record-print").hidden = !(record && entity.kind === "waybills");
 
   const box = pvById("record-fields");
   box.replaceChildren(
@@ -650,6 +656,113 @@ async function pvSubmit(event) {
     await pvLoadEntity();
   } catch (error) {
     pvShowFormError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/* ---------- printing ---------- */
+
+/** Download a generated file; failures come back as a readable message, not a saved error page. */
+async function pvDownload(path) {
+  const response = await fetch(path, { cache: "no-store" });
+  if (!response.ok) {
+    let detail = null;
+    try {
+      detail = (await response.json()).detail;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(response.status, detail);
+  }
+  const match = /filename\*=UTF-8''([^;]+)/i.exec(response.headers.get("Content-Disposition") ?? "");
+  let name = "файл.xlsx";
+  try {
+    if (match) name = decodeURIComponent(match[1]);
+  } catch {
+    /* keep the default name */
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const link = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return name;
+}
+
+async function pvPrintWaybill() {
+  const { record } = pv.editing ?? {};
+  if (!record) return;
+  const button = pvById("record-print");
+  button.disabled = true;
+  try {
+    const name = await pvDownload(`/api/primavtodor/waybills/${encodeURIComponent(record.id)}/print`);
+    toast(`Бланк сохранён: ${name}`);
+  } catch (error) {
+    pvShowFormError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function pvOpenPrintSettings() {
+  let data;
+  try {
+    data = await api("GET", "/api/primavtodor/settings/print");
+  } catch (error) {
+    toast(`Не удалось открыть настройки: ${describeError(error)}`, "error");
+    return;
+  }
+  const box = pvById("print-fields");
+  const wrap = (id, caption, control) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "field";
+    const label = document.createElement("label");
+    label.htmlFor = id;
+    label.textContent = caption;
+    wrapper.append(label, control);
+    return wrapper;
+  };
+  const rows = data.fields.map((field) => {
+    const input = document.createElement(field.key === "org_header" ? "textarea" : "input");
+    input.id = `pf-${field.key}`;
+    input.name = field.key;
+    input.value = data.values[field.key] ?? "";
+    if (input.tagName === "TEXTAREA") input.rows = 3;
+    else input.type = "text";
+    const wrapper = wrap(input.id, field.label, input);
+    if (field.key === "org_header") wrapper.classList.add("span-2");
+    return wrapper;
+  });
+  const select = document.createElement("select");
+  select.id = "pf-control";
+  select.name = "control";
+  for (const option of data.control_options) {
+    select.append(new Option(option.label, option.value, false, option.value === data.values.control));
+  }
+  box.replaceChildren(...rows, wrap("pf-control", "Кто разрешает выезд", select));
+  pvById("print-error").hidden = true;
+  pvById("dlg-print").showModal();
+  box.querySelector("input, textarea")?.focus();
+}
+
+async function pvSavePrintSettings(event) {
+  event.preventDefault();
+  const button = pvById("print-save");
+  button.disabled = true;
+  try {
+    const body = {};
+    for (const input of pvById("print-fields").querySelectorAll("input, textarea, select")) {
+      body[input.name] = input.value;
+    }
+    await api("PUT", "/api/primavtodor/settings/print", { body });
+    pvById("dlg-print").close("saved");
+    toast("Данные для печати сохранены");
+  } catch (error) {
+    const slot = pvById("print-error");
+    slot.textContent = describeError(error);
+    slot.hidden = false;
   } finally {
     button.disabled = false;
   }

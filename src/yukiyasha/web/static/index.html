@@ -187,6 +187,10 @@
           </div>
           <div class="head-actions">
             <div class="season-slot"></div>
+            <button class="btn" id="entity-print-settings" type="button" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+              <span>Данные для печати</span>
+            </button>
             <button class="btn" id="entity-files" type="button">
               <svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>
               <span>Файлы раздела</span>
@@ -342,9 +346,26 @@
       <p class="dlg-error" id="record-error" role="alert" hidden></p>
       <div class="dlg-actions dlg-actions-split">
         <button class="btn btn-ghost-danger" type="button" id="record-delete" hidden>Удалить</button>
+        <button class="btn" type="button" id="record-print" hidden>
+          <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+          <span>Печать (.xlsx)</span>
+        </button>
         <span class="spacer"></span>
         <button class="btn" type="button" data-close>Отмена</button>
         <button class="btn btn-primary" type="submit" id="record-save">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-print" class="dlg-wide" aria-labelledby="dlg-print-title">
+    <form method="dialog" id="form-print" novalidate>
+      <h2 id="dlg-print-title">Данные для печати путевого листа</h2>
+      <p class="dlg-note">Эти сведения подставляются в бланк. Пустое поле остаётся пустым в бланке.</p>
+      <div class="form-grid" id="print-fields"></div>
+      <p class="dlg-error" id="print-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit" id="print-save">Сохранить</button>
       </div>
     </form>
   </dialog>

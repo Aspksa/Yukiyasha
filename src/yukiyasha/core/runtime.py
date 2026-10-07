@@ -15,7 +15,8 @@ from yukiyasha.modules.disk.access import DiskAccess
 from yukiyasha.modules.memory import MemoryAccess, MemoryModule
 from yukiyasha.modules.permissions import PermissionBroker
 from yukiyasha.modules.primavtodor import PrimavtodorModule
-from yukiyasha.modules.primavtodor.access import PrimavtodorReadAccess
+from yukiyasha.modules.primavtodor.access import PrimavtodorReadAccess, PrimavtodorWriteAccess
+from yukiyasha.modules.proposals import ProposalCreateAccess, ProposalModule
 
 logger = logging.getLogger("yukiyasha.runtime")
 
@@ -76,6 +77,26 @@ class YukiyashaRuntime:
         self.permissions.register(self.primavtodor.manifest)
 
         self.audit = AuditLog(self.disk)
+
+        proposals_disk = DiskAccess(
+            self.disk,
+            self.permissions,
+            "proposals",
+            roots=("proposals",),
+        )
+        proposals_write = PrimavtodorWriteAccess(
+            self.primavtodor,
+            self.permissions,
+            "proposals",
+        )
+        self.proposals = ProposalModule(
+            proposals_disk,
+            proposals_write,
+            self.audit,
+        )
+        self.modules.register(self.proposals)
+        self.permissions.register(self.proposals.manifest)
+
         ai_disk = DiskAccess(
             self.disk,
             self.permissions,
@@ -92,7 +113,17 @@ class YukiyashaRuntime:
             self.permissions,
             "ai",
         )
-        ai_tools = AiToolRegistry(primavtodor_read, self.audit, memory_access)
+        proposal_create = ProposalCreateAccess(
+            self.proposals,
+            self.permissions,
+            "ai",
+        )
+        ai_tools = AiToolRegistry(
+            primavtodor_read,
+            self.audit,
+            memory_access,
+            proposal_create,
+        )
         self.ai = AiModule(ai_disk, self.settings.ai, tools=ai_tools)
         self.modules.register(self.ai)
         self.permissions.register(self.ai.manifest)

@@ -57,6 +57,7 @@ test("hash routing round-trips, including unicode, spaces and plus signs", () =>
     { file: "projects/work/a+b.txt" },
     { system: true },
     { module: "primavtodor" },
+    { module: "primavtodor", section: "waybills" },
   ];
   for (const route of routes) {
     const parsed = u.parseHash(u.routeToHash(route));
@@ -77,4 +78,21 @@ test("navFor highlights a module for everything inside its folder", () => {
   assert.equal(u.navFor("projects/work", dirs), "projects/work");
   assert.equal(u.navFor("projects/home/a", dirs), "projects/home");
   assert.equal(u.navFor("", dirs), "");
+});
+
+test("formatDate and formatNumber", () => {
+  assert.equal(u.formatDate("2026-10-05"), "05.10.2026");
+  assert.equal(u.formatDate("not a date"), "not a date");
+  assert.equal(u.formatNumber(1234.5).replace(/\s/g, " "), "1 234,5");
+  assert.equal(u.formatNumber(0), "0");
+  assert.equal(u.formatNumber(2.456), "2,46");
+});
+
+test("month helpers cross year boundaries", () => {
+  assert.equal(u.shiftMonth("2026-10", 1), "2026-11");
+  assert.equal(u.shiftMonth("2026-12", 1), "2027-01");
+  assert.equal(u.shiftMonth("2026-01", -1), "2025-12");
+  assert.equal(u.shiftMonth("2026-03", -15), "2024-12");
+  assert.equal(u.currentMonth(new Date(2026, 0, 31)), "2026-01");
+  assert.equal(u.todayIso(new Date(2026, 8, 5)), "2026-09-05");
 });

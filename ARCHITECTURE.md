@@ -45,16 +45,35 @@ right after it (modules start in registration order and stop in reverse) and own
 `projects/work/Примавтодор`. Each section is one sub-folder; all data lives on the disk and the
 module reaches it only through the disk's public API.
 
-| Group | Sections |
+| Group | Sections (in data-flow order) |
 | --- | --- |
-| Учёт | Табель, Сотрудники, Гараж, Горюче-смазочные материалы |
+| Учёт | Путевые листы → Горюче-смазочные материалы → Сотрудники → Гараж → Табель |
 | Документы | Договора, Счёт-оферта, Служебные записки, Приказы, Распоряжения |
 
-Section ids are ASCII (`timesheet`, `employees`, `garage`, `fuel`, `contracts`, `invoice_offer`,
-`memos`, `orders`, `directives`); titles and folder names are Russian. The module id is
+Section ids are ASCII (`waybills`, `fuel`, `employees`, `garage`, `timesheet`, `contracts`,
+`invoice_offer`, `memos`, `orders`, `directives`); titles and folder names are Russian. The module id is
 `primavtodor`. Documents are plain text files addressed by a single file name inside a section;
 the disk still validates every path. Declared permissions (`disk.read`, `disk.write`,
 `disk.delete`) are metadata until the central permission boundary exists.
+
+### Linked records
+
+`schema.py` is the single source of truth for fields, relations and list columns; the backend
+validates against it and the browser renders forms and tables from `/api/primavtodor/schema`.
+
+```text
+employee (driver) ── vehicle_id ──▶ vehicle              fuel_card_number (unique)
+waybill ── driver_id ──▶ employee, ── vehicle_id ──▶ vehicle
+fuel    ── waybill_id ──▶ waybill   (driver, vehicle, card number derived and stored)
+timesheet = waybills (auto "Я") + manual marks per month
+```
+
+- one JSON file per record in the section folder; all I/O goes through the disk's public API;
+- cross-record rules live in `records.py` (driver flag, closing a waybill, card required for
+  fuel, uniqueness); deleting a referenced record is refused (`409`);
+- computed values (distance, consumption, norm, deviation, amount) are derived on read and never
+  stored, so they cannot go stale; the fuel record keeps the card number it was issued on;
+- the timesheet stores only manual marks (`Табель/<ГГГГ-ММ>.json`).
 
 Note: a failing module start rolls back every module started before it (registry semantics), so a
 file (not a folder) named like a section degrades the whole runtime.

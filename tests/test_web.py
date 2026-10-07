@@ -565,3 +565,47 @@ def test_primavtodor_records_are_503_when_the_module_is_not_ready(client: TestCl
 
     assert client.get(f"{BASE}/records/vehicles").status_code == 503
     assert client.post(f"{BASE}/records/vehicles", json={}).status_code == 503
+
+
+def test_every_element_id_used_by_the_scripts_exists_in_the_page(client: TestClient) -> None:
+    """Catches markup/script drift: a renamed id would otherwise only fail in the browser."""
+    import re
+
+    html = client.get("/").text
+    used: dict[str, set[str]] = {
+        "app.js": set(re.findall(r'\$\("#([\w-]+)"\)', client.get("/static/app.js").text)),
+        "primavtodor.js": set(
+            re.findall(r'pvById\("([\w-]+)"\)', client.get("/static/primavtodor.js").text)
+        ),
+    }
+
+    # Form inputs are generated from the schema as "f-<field>"; they must name a real field.
+    field_names = {
+        f["name"] for e in client.get(f"{BASE}/schema").json()["entities"] for f in e["fields"]
+    }
+
+    for script, ids in used.items():
+        assert ids, f"no element ids found in {script}"
+        generated = {i for i in ids if i.startswith(("f-", "e-"))}
+        assert {i[2:] for i in generated} <= field_names, f"{script}: unknown form field"
+        missing = sorted(i for i in ids - generated if f'id="{i}"' not in html)
+        assert not missing, f"{script} uses ids that are not in index.html: {missing}"
+
+
+def test_primavtodor_script_is_served_before_app_js(client: TestClient) -> None:
+    html = client.get("/").text
+
+    assert html.index("/static/util.js") < html.index("/static/primavtodor.js")
+    assert html.index("/static/primavtodor.js") < html.index("/static/app.js")
+
+
+def test_primavtodor_schema_carries_section_paths(client: TestClient) -> None:
+    payload = client.get(f"{BASE}/schema").json()
+
+    waybills = next(e for e in payload["entities"] if e["kind"] == "waybills")
+    assert waybills["path"] == "projects/work/Примавтодор/Путевые листы"
+    assert payload["timesheet"] == {
+        "section_id": "timesheet",
+        "title": "Табель",
+        "path": "projects/work/Примавтодор/Табель",
+    }

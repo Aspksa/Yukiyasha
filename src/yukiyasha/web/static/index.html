@@ -168,6 +168,80 @@
         <div id="module-groups" aria-live="polite"></div>
       </section>
 
+      <section id="view-entity" class="entity-page" aria-label="Записи" hidden>
+        <header class="page-head">
+          <div class="entity-heading">
+            <span class="sec-tile" id="entity-tile"><svg class="icon" aria-hidden="true"><use id="entity-icon" href="#i-folder"/></svg></span>
+            <div>
+              <p class="eyebrow"><button class="link-btn" id="entity-back" type="button">Примавтодор</button></p>
+              <h1 id="entity-title"></h1>
+            </div>
+          </div>
+          <div class="head-actions">
+            <button class="btn" id="entity-files" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>
+              <span>Файлы раздела</span>
+            </button>
+            <button class="btn" id="entity-refresh" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>
+              <span>Обновить</span>
+            </button>
+            <button class="btn btn-primary" id="entity-new" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
+              <span id="entity-new-label">Новая запись</span>
+            </button>
+          </div>
+        </header>
+        <p class="module-lead" id="entity-lead"></p>
+        <div class="toolbar-inline">
+          <label class="search">
+            <span class="sr-only">Поиск</span>
+            <input id="entity-filter" type="search" placeholder="Поиск по записям" autocomplete="off">
+          </label>
+          <span class="count" id="entity-count" aria-live="polite"></span>
+        </div>
+        <div class="notice" id="entity-problems" role="alert" hidden></div>
+        <div class="table-wrap" id="entity-wrap">
+          <table class="data-table" id="entity-table"><thead></thead><tbody></tbody></table>
+        </div>
+        <div class="empty" id="entity-empty" hidden></div>
+      </section>
+
+      <section id="view-timesheet" class="timesheet-page" aria-label="Табель" hidden>
+        <header class="page-head">
+          <div class="entity-heading">
+            <span class="sec-tile" data-sec="timesheet"><svg class="icon" aria-hidden="true"><use href="#i-sec-timesheet"/></svg></span>
+            <div>
+              <p class="eyebrow"><button class="link-btn" id="ts-back" type="button">Примавтодор</button></p>
+              <h1>Табель</h1>
+            </div>
+          </div>
+          <div class="head-actions">
+            <button class="btn" id="ts-files" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>
+              <span>Файлы раздела</span>
+            </button>
+            <button class="btn" id="ts-refresh" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>
+              <span>Обновить</span>
+            </button>
+          </div>
+        </header>
+        <p class="module-lead">День, на который у водителя есть путевой лист, считается рабочим автоматически. Отпуск, больничный и прочие отметки ставятся вручную — нажмите на ячейку.</p>
+        <div class="month-bar">
+          <button class="icon-btn" id="ts-prev" type="button" aria-label="Предыдущий месяц"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></button>
+          <label class="sr-only" for="ts-month">Месяц</label>
+          <input type="month" id="ts-month">
+          <button class="icon-btn" id="ts-next" type="button" aria-label="Следующий месяц"><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+          <button class="btn" id="ts-today" type="button">Текущий месяц</button>
+        </div>
+        <div class="legend" id="ts-legend" aria-label="Обозначения"></div>
+        <div class="table-wrap ts-wrap" id="ts-wrap">
+          <table class="ts-table" id="ts-table"></table>
+        </div>
+        <div class="empty" id="ts-empty" hidden></div>
+      </section>
+
       <section id="view-system" class="system" aria-label="Система" hidden>
         <header class="page-head">
           <div>
@@ -214,6 +288,36 @@
     </form>
   </dialog>
 
+  <dialog id="dlg-record" class="dlg-wide" aria-labelledby="dlg-record-title">
+    <form method="dialog" id="form-record" novalidate>
+      <h2 id="dlg-record-title"></h2>
+      <div class="warn-list" id="record-warnings" hidden></div>
+      <div class="form-grid" id="record-fields"></div>
+      <dl class="details" id="record-details" hidden></dl>
+      <p class="dlg-error" id="record-error" role="alert" hidden></p>
+      <div class="dlg-actions dlg-actions-split">
+        <button class="btn btn-ghost-danger" type="button" id="record-delete" hidden>Удалить</button>
+        <span class="spacer"></span>
+        <button class="btn" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit" id="record-save">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-mark" aria-labelledby="dlg-mark-title">
+    <form method="dialog" id="form-mark">
+      <h2 id="dlg-mark-title">Отметка в табеле</h2>
+      <p class="dlg-note" id="mark-note"></p>
+      <label for="mark-code">Отметка</label>
+      <select id="mark-code"></select>
+      <p class="dlg-error" id="mark-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit" id="mark-save">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="dlg-confirm" aria-labelledby="dlg-confirm-title">
     <form method="dialog" id="form-confirm">
       <h2 id="dlg-confirm-title">Подтверждение</h2>
@@ -228,6 +332,7 @@
   <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 
   <script src="/static/util.js" defer></script>
+  <script src="/static/primavtodor.js" defer></script>
   <script src="/static/app.js" defer></script>
 </body>
 </html>

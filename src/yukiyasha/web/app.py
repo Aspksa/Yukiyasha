@@ -186,8 +186,7 @@ def create_app(
 
     @application.get("/api/primavtodor/schema")
     def primavtodor_schema() -> dict[str, object]:
-        module = runtime.primavtodor
-        return {"entities": module.data.schema(), "timesheet_codes": module.timesheet.codes()}
+        return runtime.primavtodor.schema()
 
     @application.get("/api/primavtodor/records/{kind}")
     def primavtodor_list(kind: str) -> dict[str, object]:

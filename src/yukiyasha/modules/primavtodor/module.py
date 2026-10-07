@@ -91,6 +91,23 @@ class PrimavtodorModule:
             "health": health,
         }
 
+    def schema(self) -> dict[str, object]:
+        """Everything the browser needs to render forms, tables and the timesheet."""
+        entities = []
+        for entity in self.data.schema():
+            section = SECTIONS_BY_ID[str(entity["section_id"])]
+            entities.append({**entity, "path": section.path, "section_title": section.title})
+        timesheet = SECTIONS_BY_ID["timesheet"]
+        return {
+            "entities": entities,
+            "timesheet": {
+                "section_id": timesheet.id,
+                "title": timesheet.title,
+                "path": timesheet.path,
+            },
+            "timesheet_codes": self.timesheet.codes(),
+        }
+
     # ----- sections and documents (all data lives on the disk) -----
 
     def section(self, section_id: str) -> Section:

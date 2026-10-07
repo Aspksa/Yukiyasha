@@ -2,10 +2,10 @@
 
 ## Current release
 
-- Version: **0.2.1**
-- Stage: **Module Runtime / Hardening**
-- Status: **release candidate**
-- First module: **Диск Yukiyasha**
+- Version: **0.3.0**
+- Stage: **Workspace / Примавтодор / AI assistant (first version)**
+- Status: **released** (see `CHANGELOG.md`)
+- Modules: **Диск Yukiyasha**, **Примавтодор**, **Помощник**
 
 ## Implemented
 
@@ -50,11 +50,10 @@
 - Disk API currently supports UTF-8 text files only.
 - No authentication.
 - Local security assumes binding to loopback; remote serving is not supported yet.
-- No LLM/provider integration.
-- No memory module.
+- The AI assistant has no memory, tools or data access and is verified against a test server only.
 - No deployment configuration yet.
 
 ## Exact next_action
 
-Implement the **permissions boundary** so declared module permissions become enforced runtime
-capabilities before storing valuable user data or adding additional modules.
+Implement the **permissions boundary**, **data masking** and an **audit log**; then give the assistant
+read-only tools over the Примавтодор data. The assistant proposes, a person decides.

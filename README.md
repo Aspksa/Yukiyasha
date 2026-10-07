@@ -4,15 +4,15 @@ Yukiyasha is a modular AI-oriented platform foundation with a local web interfac
 
 ## Current version
 
-**v0.2.1 — Disk and runtime hardening**
+**v0.3.0 — Workspace, Примавтодор and AI assistant**
 
 The current release provides:
-- modular Python core and module registry;
-- explicit module lifecycle and health;
-- sandboxed local **Диск Yukiyasha**;
-- project navigation for **Рабочие проекты** and **Домашние проекты**;
-- FastAPI web/API layer;
-- automated tests and two-tier CI.
+- modular Python core and module registry with explicit lifecycle and health;
+- sandboxed local **Диск Yukiyasha** and a browser workspace (file manager, editor, system page);
+- the **Примавтодор** module: waybills, fuel (ГСМ), employees with fuel cards and vehicles, garage,
+  timesheet, seasonal fuel norms with one summer/winter switch, document folders;
+- an **AI assistant** you connect with your own API key (see below);
+- FastAPI web/API layer, automated tests and two-tier CI.
 
 ## Requirements
 

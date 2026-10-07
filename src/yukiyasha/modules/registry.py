@@ -54,8 +54,9 @@ class ModuleRegistry:
             except Exception as exc:
                 try:
                     module.stop()
-                finally:
-                    module.fail(exc)
+                except Exception:
+                    pass
+                module.fail(exc)
 
                 for started_module in reversed(started):
                     try:

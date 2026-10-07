@@ -63,12 +63,24 @@ jobs:
           }
 
       - name: Reject ambiguous leading-zero port
+        shell: pwsh
+        run: |
+          $env:YUKIYASHA_PORT = "08080"
+          $output = cmd /d /c "Yukiyasha.bat --check 2>&1"
+          $exitCode = $LASTEXITCODE
+          $text = $output -join [Environment]::NewLine
+          if ($exitCode -eq 0) {
+            throw "Leading-zero port was accepted"
+          }
+          if ($text -notmatch "Некорректный порт") {
+            throw "Launcher failed for an unexpected reason. Output: $text"
+          }
+
+      - name: Verify code page restore parser
         shell: cmd
         run: |
-          set YUKIYASHA_PORT=08080
-          call Yukiyasha.bat --check
-          if not errorlevel 1 exit /b 1
-          exit /b 0
+          for /f "tokens=2 delims=:" %%C in ('chcp') do set "CP=%%C"
+          powershell -NoProfile -Command "if(-not [int]::TryParse($env:CP.Trim(), [ref]([int]$n=0))){exit 1}; exit 0"
 
       - name: Launcher diagnostics
         shell: cmd

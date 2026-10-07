@@ -36,6 +36,9 @@ echo ║            локальный веб-лаунчер             ║
 echo ╚══════════════════════════════════════════════╝
 echo.
 
+call :validate_port
+if errorlevel 1 goto :fatal
+
 call :check_python
 if errorlevel 1 goto :fatal
 
@@ -204,17 +207,93 @@ if not exist "%DEPS_MARKER%" >"%DEPS_MARKER%" echo %CURRENT_DEPS_HASH%
 echo [OK] Зависимости соответствуют pyproject.toml.
 exit /b 0
 
-:select_port
-echo [5/5] Проверка порта...
+:validate_port
 set "PORT_CANDIDATE=%PORT%"
 powershell -NoProfile -Command ^
   "$v=$env:PORT_CANDIDATE; $p=0;" ^
-  "if(($v -match '^[1-9]\d{0,4}$') -and [int]::TryParse($v,[ref]$p) -and $p -le 65535){exit 0}else{exit 1}" >nul 2>&1
+  "if(($v -match '^[1-9]\d{0,4}
+:port_loop
+call :is_port_busy %CURRENT_PORT%
+set "PORT_CHECK_RC=%ERRORLEVEL%"
+if %PORT_CHECK_RC% GEQ 2 (
+    echo [ОШИБКА] Не удалось проверить состояние порта %CURRENT_PORT%.
+    exit /b 1
+)
+if "%PORT_CHECK_RC%"=="1" (
+    set "PORT=%CURRENT_PORT%"
+    echo [OK] Порт %CURRENT_PORT% свободен.
+    exit /b 0
+)
+
+call :is_yukiyasha %CURRENT_PORT%
+if not errorlevel 1 (
+    set "PORT=%CURRENT_PORT%"
+    set "ALREADY_RUNNING=1"
+    echo [OK] Найден уже запущенный Yukiyasha на порту %CURRENT_PORT%.
+    exit /b 0
+)
+
+echo [Yukiyasha] Порт %CURRENT_PORT% занят другим процессом.
+if "%FIXED_PORT%"=="1" (
+    echo [ОШИБКА] Выбранный фиксированный порт недоступен.
+    exit /b 1
+)
+
+set /a CURRENT_PORT+=1
+if %CURRENT_PORT% GTR %MAX_PORT% (
+    echo [ОШИБКА] Нет свободного порта в диапазоне %DEFAULT_PORT%-%MAX_PORT%.
+    echo Освободите один из портов или задайте порт вручную:
+    echo   Yukiyasha.bat 8090
+    exit /b 1
+)
+goto :port_loop
+
+:is_port_busy
+set "CHECK_PORT=%~1"
+powershell -NoProfile -Command ^
+  "$p=%CHECK_PORT%;" ^
+  "try {" ^
+  "  try {" ^
+  "    $listeners=Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction Stop;" ^
+  "    if($listeners){exit 0}else{exit 1}" ^
+  "  } catch {" ^
+  "    $lines=& netstat -ano -p tcp 2>$null;" ^
+  "    if($LASTEXITCODE -ne 0){exit 2};" ^
+  "    if($lines -match (':'+$p+'\s+.*LISTENING')){exit 0}else{exit 1}" ^
+  "  }" ^
+  "} catch { exit 2 }" >nul 2>&1
+exit /b %ERRORLEVEL%
+
+:is_yukiyasha
+set "CHECK_PORT=%~1"
+powershell -NoProfile -Command ^
+  "try{" ^
+  "  $r=Invoke-RestMethod -Uri 'http://%HOST%:%CHECK_PORT%/api/health' -TimeoutSec 1;" ^
+  "  if($r.service -eq 'Yukiyasha'){exit 0}else{exit 1}" ^
+  "}catch{exit 1}" >nul 2>&1
+exit /b %ERRORLEVEL%
+
+:restore_console
+if defined ORIGINAL_CODEPAGE chcp %ORIGINAL_CODEPAGE% >nul 2>&1
+exit /b 0
+
+:fatal
+echo.
+echo Запуск Yukiyasha остановлен из-за ошибки.
+echo.
+call :restore_console
+if "%CHECK_ONLY%"=="1" exit /b 1
+pause
+exit /b 1
+) -and [int]::TryParse($v,[ref]$p) -and $p -le 65535){exit 0}else{exit 1}" >nul 2>&1
 if errorlevel 1 (
     echo [ОШИБКА] Некорректный порт: "%PORT%"
     exit /b 1
 )
+exit /b 0
 
+:select_port
+echo [5/5] Проверка порта...
 set /a CURRENT_PORT=%PORT%
 
 :port_loop

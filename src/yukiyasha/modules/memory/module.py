@@ -5,7 +5,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 
-from yukiyasha.modules.disk import DiskConflictError, DiskModule
+from yukiyasha.modules.disk import DiskModule
 from yukiyasha.modules.disk.access import DiskAccess
 from yukiyasha.modules.manifest import ModuleManifest
 from yukiyasha.modules.memory.errors import (
@@ -23,6 +23,10 @@ MAX_MEMORY_CHARS = 2_000
 MAX_MEMORY_ITEMS = 500
 MAX_SEARCH_RESULTS = 10
 TOKEN_RE = re.compile(r"[\wа-яё-]{2,}", re.IGNORECASE)
+SECRET_RE = re.compile(
+    r"парол|password|api[ _-]?key|секретн(?:ый|ого)? ключ|access[ _-]?token|bearer\s+",
+    re.IGNORECASE,
+)
 
 MEMORY_MANIFEST = ModuleManifest(
     module_id="memory",

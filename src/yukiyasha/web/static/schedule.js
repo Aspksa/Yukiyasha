@@ -60,6 +60,7 @@ const sch = {
   kind: "trip",
   employees: [],
   controller: null,
+  justDragged: false,
   quick: null, // { text, guess } of the line that was read and waits for Enter
 };
 
@@ -172,6 +173,7 @@ async function schLoad() {
 
 function schRender() {
   const data = sch.data;
+  schRenderLegend();
   schById("sch-range").textContent = `${schDayLabel(data.start)} — ${schDayLabel(data.end)}`;
   schRenderStats(data);
   schRenderNow(data);
@@ -185,14 +187,15 @@ function schRender() {
   data.days.forEach((day, index) => {
     const date = schParse(day.date);
     const picked = day.date === data.free.day;
-    const cell = schEl("button", `sch-day ${day.kind}${day.date === data.today ? " today" : ""}${picked ? " sel" : ""}`);
+    const cell = schEl("button", `sch-day ${day.kind}${day.date === data.today ? " today" : ""}${picked ? " sel" : ""}${date.getDay() === 1 ? " week" : ""}`);
     cell.type = "button";
     cell.title = "Показать, кто свободен в этот день";
     cell.addEventListener("click", () => {
       sch.day = day.date;
       void schLoad();
     });
-    if (index === 0 || date.getDate() === 1) {
+    if (day.date === data.today) cell.append(schEl("span", "sch-month now", "сегодня"));
+    else if (index === 0 || date.getDate() === 1) {
       cell.append(schEl("span", "sch-month", SCH_MONTHS[date.getMonth()].slice(0, 3)));
     }
     cell.append(schEl("b", "", String(date.getDate())), schEl("small", "", SCH_WEEKDAYS[date.getDay()]));
@@ -268,6 +271,19 @@ function schStat(icon, tone, big, small, label) {
   text.append(number, schEl("span", "", label));
   card.append(mark, text);
   return card;
+}
+
+function schRenderLegend() {
+  const box = schById("sch-legend");
+  if (box.childElementCount) return;
+  for (const [kind, label] of [["trip", "Командировка"], ["busy", "Занята весь день"], ["service", "Ремонт / ТО"]]) {
+    const item = schEl("span", `sch-leg ${kind}`);
+    item.append(schIconBadge("sch-leg-ico", kind, 12), label);
+    box.append(item);
+  }
+  const clash = schEl("span", "sch-leg clash");
+  clash.append(schIconBadge("sch-leg-ico", "warn", 12), "Пересечение");
+  box.append(clash);
 }
 
 function schRenderStats(data) {
@@ -393,17 +409,31 @@ function schRenderCar(vehicle, data) {
   const mine = data.bookings.filter((row) => row.vehicle_id === vehicle.id);
   const { placed, count } = schLanes(mine);
   const total = data.days.length;
+  const busyNow = data.now.some((item) => item.vehicle_id === vehicle.id);
 
   const row = schEl("div", "sch-row");
   const car = schEl("div", "sch-car");
-  car.append(schEl("b", "mono", vehicle.plate), schEl("span", "", vehicle.model));
-  if (vehicle.driver) car.append(schEl("small", "", `обычно ${schShort(vehicle.driver)}`));
+  const top = schEl("div", "sch-car-top");
+  const dot = schEl("i", `sch-dot ${busyNow ? "busy" : "free"}`);
+  dot.title = busyNow ? "Сегодня занята" : "Сегодня свободна";
+  top.append(dot, schEl("b", "mono", vehicle.plate));
+  car.append(top, schEl("span", "", vehicle.model));
+  if (vehicle.driver) {
+    const who = schEl("small", "sch-car-driver");
+    who.append(schAvatar(vehicle.driver), schShort(vehicle.driver));
+    car.append(who);
+  }
 
   const track = schEl("div", "sch-track");
+  track.dataset.vehicle = vehicle.id;
   track.style.setProperty("--lanes", count);
   const cells = schEl("div", "sch-cells");
   data.days.forEach((day, index) => {
-    const cell = schEl("div", `sch-cell ${day.kind}${day.date === data.today ? " today" : ""}${day.date === data.free.day ? " sel" : ""}`);
+    const weekday = schParse(day.date).getDay();
+    const cell = schEl(
+      "div",
+      `sch-cell ${day.kind}${day.date === data.today ? " today" : ""}${day.date === data.free.day ? " sel" : ""}${weekday === 1 ? " week" : ""}`,
+    );
     cell.dataset.i = String(index);
     cell.addEventListener("pointerdown", (event) => schStartDrag(event, vehicle.id, index, track));
     cell.addEventListener("pointerenter", () => schMoveDrag(vehicle.id, index));
@@ -411,25 +441,122 @@ function schRenderCar(vehicle, data) {
   });
   const bars = schEl("div", "sch-bars");
   for (const { row: booking, lane } of placed) {
-    const from = Math.max(0, schDiff(booking.date_from, data.start));
-    const to = Math.min(total - 1, schDiff(booking.date_to, data.start));
-    const bar = schEl("button", `sch-bar ${booking.kind}${booking.conflicts.length ? " clash" : ""}`);
-    bar.type = "button";
+    const first = schDiff(booking.date_from, data.start);
+    const last = schDiff(booking.date_to, data.start);
+    const from = Math.max(0, first);
+    const to = Math.min(total - 1, last);
+    const width = to - from + 1;
+    const bar = schEl("div", `sch-bar ${booking.kind}${booking.conflicts.length ? " clash" : ""}${width === 1 ? " narrow" : ""}`);
+    bar.tabIndex = 0;
+    bar.setAttribute("role", "button");
     bar.style.gridColumn = `${from + 1} / ${to + 2}`;
     bar.style.gridRow = String(lane + 1);
-    if (booking.date_from < data.start) bar.classList.add("cut-left");
-    if (booking.date_to > data.end) bar.classList.add("cut-right");
+    if (first < 0) bar.classList.add("cut-left");
+    if (last > total - 1) bar.classList.add("cut-right");
+    if (first >= 0) bar.append(schEl("span", "sch-h sch-h-l"));
     bar.append(schIconBadge("sch-bar-icon", booking.kind, 14));
-    bar.append(schEl("span", "sch-bar-text", booking.driver ? schShort(booking.driver) : booking.kind_label));
-    if (booking.note && to - from >= 2) bar.append(schEl("small", "", booking.note));
+    if (booking.driver && width >= 2) bar.append(schAvatar(booking.driver));
+    const label = booking.driver ? schShort(booking.driver) : booking.kind_label;
+    if (width >= 2 || !booking.driver) bar.append(schEl("span", "sch-bar-text", label));
+    if (booking.note && width >= 4) bar.append(schEl("small", "", booking.note));
+    if (booking.conflicts.length) bar.append(schIconBadge("sch-bar-warn", "warn", 14));
+    if (last <= total - 1) bar.append(schEl("span", "sch-h sch-h-r"));
     const warn = booking.conflicts.length ? `\n⚠ ${booking.conflicts.join("; ")}` : "";
-    bar.title = `${booking.kind_label}: ${booking.driver || booking.vehicle}\n${booking.span} · ${booking.days} ${plural(booking.days, "день", "дня", "дней")}${booking.note ? `\n${booking.note}` : ""}${warn}`;
-    bar.addEventListener("click", () => void schOpen({ id: booking.id }));
+    bar.title = `${booking.kind_label}: ${booking.driver || booking.vehicle}\n${booking.span} · ${booking.days} ${plural(booking.days, "день", "дня", "дней")}${booking.note ? `\n${booking.note}` : ""}${warn}\n\nПотяните, чтобы сдвинуть; за край — чтобы изменить срок`;
+    bar.addEventListener("click", () => {
+      if (!sch.justDragged) void schOpen({ id: booking.id });
+    });
+    bar.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        void schOpen({ id: booking.id });
+      }
+    });
+    bar.addEventListener("pointerdown", (event) => schBarDown(event, bar, booking, first, last, cells));
     bars.append(bar);
   }
   track.append(cells, bars);
   row.append(car, track);
   return row;
+}
+
+/* ---------- move and resize a booking ---------- */
+
+function schBarDown(event, bar, booking, first, last, cells) {
+  if (event.button !== 0) return;
+  const handle = event.target.closest(".sch-h");
+  if (event.pointerType === "touch" && !handle) return; // a finger scrolls the grid
+  event.preventDefault();
+  const total = sch.data.days.length;
+  const width = cells.getBoundingClientRect().width / total;
+  const mode = handle ? (handle.classList.contains("sch-h-l") ? "start" : "end") : "move";
+  const drag = { x: event.clientX, moved: false, delta: 0, vehicle: booking.vehicle_id, track: null };
+  bar.setPointerCapture(event.pointerId);
+  bar.classList.add("lifted");
+
+  const place = () => {
+    let a = first;
+    let b = last;
+    if (mode === "move") {
+      a = first + drag.delta;
+      b = last + drag.delta;
+    } else if (mode === "start") {
+      a = Math.min(first + drag.delta, last);
+    } else {
+      b = Math.max(last + drag.delta, first);
+    }
+    bar.style.gridColumn = `${Math.max(0, a) + 1} / ${Math.min(total - 1, b) + 2}`;
+    return [a, b];
+  };
+  const onMove = (e) => {
+    if (Math.abs(e.clientX - drag.x) > 4) drag.moved = true;
+    drag.delta = Math.round((e.clientX - drag.x) / width);
+    place();
+    if (mode === "move") {
+      const under = document.elementsFromPoint(e.clientX, e.clientY).find((n) => n.matches?.(".sch-track"));
+      for (const node of document.querySelectorAll(".sch-track.drop")) node.classList.remove("drop");
+      if (under) {
+        under.classList.add("drop");
+        drag.vehicle = under.dataset.vehicle;
+      }
+    }
+  };
+  const onUp = async () => {
+    bar.removeEventListener("pointermove", onMove);
+    bar.removeEventListener("pointerup", onUp);
+    bar.removeEventListener("pointercancel", onUp);
+    bar.classList.remove("lifted");
+    for (const node of document.querySelectorAll(".sch-track.drop")) node.classList.remove("drop");
+    if (!drag.moved) return;
+    sch.justDragged = true;
+    setTimeout(() => (sch.justDragged = false), 250);
+    const [a, b] = place();
+    if (a === first && b === last && drag.vehicle === booking.vehicle_id) {
+      schRender();
+      return;
+    }
+    try {
+      const saved = await api("PUT", `/api/primavtodor/bookings/${booking.id}`, {
+        body: {
+          vehicle_id: drag.vehicle,
+          driver_id: booking.driver_id ?? "",
+          kind: booking.kind,
+          note: booking.note,
+          date_from: schIso(schAdd(sch.start, a)),
+          date_to: schIso(schAdd(sch.start, b)),
+        },
+      });
+      if (saved.conflicts.length) toast(`Сдвинуто, но есть пересечение: ${saved.conflicts[0]}`, "error");
+      else toast(`${saved.driver ? schShort(saved.driver) : saved.kind_label}: ${saved.vehicle}, ${saved.span}`);
+    } catch (error) {
+      toast(describeError(error), "error");
+    }
+    await schLoad();
+    void briefLoad();
+  };
+  bar.addEventListener("pointermove", onMove);
+  bar.addEventListener("pointerup", onUp);
+  bar.addEventListener("pointercancel", onUp);
 }
 
 /* ---------- drag to create ---------- */

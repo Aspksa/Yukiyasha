@@ -1303,3 +1303,64 @@ dialog input[type="text"] {
 .sch-q-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .sch-q-tip { color: var(--faint); font-size: 12.5px; }
 @media (max-width: 640px) { .brief-list { grid-template-columns: 1fr; } .sch-quick .btn { display: none; } }
+
+/* ---------- график машин: второй проход ---------- */
+.schedule { --sch-col: 46px; background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 5%, var(--surface)), var(--surface) 160px); box-shadow: 0 10px 30px -18px rgba(0, 0, 0, .5); }
+.sch-legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 10px; color: var(--muted); font-size: 12.5px; }
+.sch-leg { --c: var(--sch-trip); display: inline-flex; align-items: center; gap: 6px; }
+.sch-leg.busy { --c: var(--sch-busy); }
+.sch-leg.service { --c: var(--sch-service); }
+.sch-leg.clash { --c: var(--danger); }
+.sch-leg-ico { display: grid; place-items: center; width: 20px; height: 20px; color: #fff; background: var(--c); border-radius: 6px; }
+
+.sch-scroll { max-height: 70vh; overflow: auto; border-radius: 14px; box-shadow: inset 0 0 0 1px var(--line); }
+.sch-headrow { position: sticky; top: 0; z-index: 5; background: var(--surface); box-shadow: 0 1px 0 var(--line); }
+.sch-row { transition: background .12s; }
+.sch-row:not(.sch-headrow):hover { background: color-mix(in oklab, var(--accent) 4%, transparent); }
+.sch-row:not(.sch-headrow):hover .sch-car { background: color-mix(in oklab, var(--accent) 6%, var(--surface)); }
+.sch-day.week, .sch-cell.week { border-left: 1px solid var(--line-strong); }
+.sch-month.now { color: var(--accent-ink); background: var(--accent); padding: 1px 6px; border-radius: 999px; top: 3px; left: 50%; transform: translateX(-50%); font-weight: 700; letter-spacing: .04em; }
+.sch-cell.today { box-shadow: inset 2px 0 0 var(--accent), inset -2px 0 0 var(--accent); background: color-mix(in oklab, var(--accent) 8%, transparent); }
+.sch-day.today b { display: grid; place-items: center; width: 26px; height: 26px; color: var(--accent-ink); background: var(--accent); border-radius: 50%; }
+
+.sch-car { gap: 3px; padding: 10px 12px; }
+.sch-car-top { display: flex; align-items: center; gap: 8px; }
+.sch-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 22%, transparent); }
+.sch-dot.busy { background: var(--sch-busy); box-shadow: 0 0 0 3px color-mix(in oklab, var(--sch-busy) 25%, transparent); }
+.sch-car-driver { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+.sch-car-driver .sch-ava { width: 20px; height: 20px; font-size: 9px; }
+
+.sch-track { min-height: calc(var(--lanes) * 40px + 14px); }
+.sch-bars { grid-auto-rows: 36px; row-gap: 4px; padding: 7px 0; }
+.sch-cell { position: relative; }
+.sch-cell:not(.off):hover::after { content: "+"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--accent); font-size: 18px; font-weight: 700; opacity: .8; }
+.sch-track.drop { background: color-mix(in oklab, var(--ok) 10%, transparent); box-shadow: inset 0 0 0 2px var(--ok); }
+
+.sch-bar { position: relative; gap: 7px; padding: 0 10px; font-size: 13.5px; cursor: grab; user-select: none; touch-action: pan-y;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--c) 44%, var(--surface)), color-mix(in oklab, var(--c) 28%, var(--surface)));
+  border: 1px solid color-mix(in oklab, var(--c) 70%, transparent); border-left-width: 1px; border-radius: 11px;
+  box-shadow: 0 3px 10px -4px color-mix(in oklab, var(--c) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, .12); transition: box-shadow .12s, transform .12s; }
+.sch-bar:hover { transform: translateY(-1px); box-shadow: 0 8px 18px -6px color-mix(in oklab, var(--c) 80%, transparent), inset 0 1px 0 rgba(255, 255, 255, .16); }
+.sch-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sch-bar.lifted { cursor: grabbing; z-index: 4; transform: translateY(-2px) scale(1.01); box-shadow: 0 14px 28px -8px rgba(0, 0, 0, .55); }
+.sch-bar.narrow { justify-content: center; padding: 0 4px; }
+.sch-bar .sch-bar-icon { color: #fff; opacity: .9; }
+.sch-bar .sch-ava { width: 22px; height: 22px; font-size: 9.5px; box-shadow: 0 0 0 2px color-mix(in oklab, var(--c) 40%, var(--surface)); }
+.sch-bar-warn { display: grid; place-items: center; margin-left: auto; color: var(--danger); }
+.sch-bar.clash { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--danger) 26%, var(--surface)) 0 10px, color-mix(in oklab, var(--danger) 14%, var(--surface)) 10px 20px); border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-soft); }
+.sch-bar.service { background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--c) 34%, var(--surface)) 0 9px, color-mix(in oklab, var(--c) 16%, var(--surface)) 9px 18px); }
+.sch-h { position: absolute; top: 0; bottom: 0; width: 10px; cursor: ew-resize; touch-action: none; }
+.sch-h-l { left: 0; }
+.sch-h-r { right: 0; }
+.sch-h::after { content: ""; position: absolute; top: 28%; bottom: 28%; width: 3px; border-radius: 3px; background: #fff; opacity: 0; transition: opacity .12s; }
+.sch-h-l::after { left: 3px; }
+.sch-h-r::after { right: 3px; }
+.sch-bar:hover .sch-h::after { opacity: .6; }
+.sch-bar-text { font-weight: 700; }
+.sch-bar small { color: color-mix(in oklab, var(--text) 80%, transparent); }
+
+.sch-stat { transition: transform .12s; }
+.sch-stat:hover { transform: translateY(-1px); }
+@media (max-width: 640px) { .sch-scroll { max-height: none; } .sch-legend { gap: 8px 12px; } }
+.sch-car .sch-ava, .sch-card .sch-ava { color: #fff; font-size: 9px; overflow: visible; }
+.sch-card .sch-ava { font-size: 13px; width: 34px; height: 34px; }

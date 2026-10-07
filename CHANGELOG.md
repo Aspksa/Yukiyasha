@@ -5,6 +5,10 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- **График машин, second pass:** bookings can be dragged to other days or another car and
+  stretched by their edges (a conflict is flagged, never refused); gradient bars with the driver's
+  initials, a «сегодня» marker and a highlighted today column, week separators, a sticky header,
+  a legend, a free/busy dot and the usual driver on each car, a «+» on free days.
 - **Quick booking from one line** in the schedule: type what you hear on the phone, «Веровский
   7-9 командировка Находка», «Игорь с 5 по 7», «хино 12-13 ремонт» or «завтра», and the line is
   read into a driver, a car, dates and a type. The car comes from the driver (and the driver from

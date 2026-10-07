@@ -51,6 +51,9 @@ AI_MANIFEST = ModuleManifest(
         "disk.delete",
         "ai.provider",
         "primavtodor.read",
+        "memory.read",
+        "memory.write",
+        "memory.delete",
     ),
 )
 
@@ -183,7 +186,7 @@ class AiModule:
             "assistant_name": settings.assistant_name,
             "persona_path": PERSONA_PATH,
             "tools": list(self._tools.names) if self._tools else [],
-            "tool_access": "read-only" if self._tools else "none",
+            "tool_access": "guarded" if self._tools else "none",
             "limits": {
                 "max_message_chars": MAX_MESSAGE_CHARS,
                 "max_tokens": settings.max_tokens,
@@ -296,7 +299,7 @@ class AiModule:
         planner = getattr(provider, "plan_tools", None)
         if not callable(planner):
             return context
-        plan = planner(context, self._tools.definitions())
+        plan = planner(context, self._tools.definitions(user_text))
         if plan is None:
             return context
         enriched = [*context, plan.message]
@@ -306,7 +309,11 @@ class AiModule:
                     "role": "tool",
                     "tool_call_id": call.id,
                     "name": call.name,
-                    "content": self._tools.execute(call.name, call.arguments),
+                    "content": self._tools.execute(
+                        call.name,
+                        call.arguments,
+                        user_text,
+                    ),
                 }
             )
         return enriched

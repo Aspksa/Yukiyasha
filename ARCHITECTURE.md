@@ -25,7 +25,8 @@ Yukiyasha is a modular monolith with explicit runtime, module and transport boun
 
 4. **Web/API**
    - transport and HTTP safety boundary;
-   - request body, Host and browser Origin validation;
+   - request body, Host and same-origin validation;
+   - security headers (CSP without inline code, no framing, no MIME sniffing) and cache rules;
    - synchronous filesystem endpoints run through FastAPI's threadpool.
 
 ### Dependency rule
@@ -55,6 +56,9 @@ Security and consistency invariants:
 - UTF-8 bytes are read/written directly so line endings are never translated by the OS;
 - text API reads/writes are capped at 1 MiB;
 - HTTP request bodies are capped at 2 MiB before application parsing;
+- internal temporary files are recognised by exact name shape, never by prefix alone;
+- built-in project directories are protected by file identity, not by path spelling;
+- the fully resolved path (not only symlink flags) must stay inside the root;
 - deleting the disk root is forbidden;
 - permission, conflict, invalid-path and size failures are represented explicitly.
 

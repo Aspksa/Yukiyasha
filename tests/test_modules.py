@@ -1,5 +1,6 @@
 import errno
 import os
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,7 +90,7 @@ def test_registry_rejects_duplicate_module(tmp_path: Path) -> None:
         registry.register(DiskModule(tmp_path / "two"))
 
 
-@pytest.mark.parametrize("module_id", ["", "../bad", "bad id", "bad/slash"])
+@pytest.mark.parametrize("module_id", ["", "../bad", "bad id", "bad/slash", "диск", "disk\u0661"])
 def test_registry_rejects_invalid_module_id(module_id: str) -> None:
     registry = ModuleRegistry()
 
@@ -345,13 +346,84 @@ def test_disk_protects_builtin_project_directories(tmp_path: Path, path: str) ->
 def test_disk_hides_and_cleans_stale_temp_files(tmp_path: Path) -> None:
     root = tmp_path / "disk"
     root.mkdir()
-    stale = root / ".yukiyasha-stale"
+    stale = root / ".yukiyasha-ab12cd34"
     stale.write_text("partial")
 
     disk = DiskModule(root)
     disk.start()
 
     assert not stale.exists()
-    live_temp = root / ".yukiyasha-live"
+    live_temp = root / ".yukiyasha-ef56gh78"
     live_temp.write_text("partial")
     assert all(entry["name"] != live_temp.name for entry in disk.list_entries())
+
+
+def test_disk_keeps_user_files_that_only_share_the_temp_prefix(tmp_path: Path) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+
+    disk.write_text(".yukiyasha-notes.txt", "mine")
+    disk.stop()
+    disk.start()  # startup cleanup must not touch it
+
+    assert disk.read_text(".yukiyasha-notes.txt") == "mine"
+    assert ".yukiyasha-notes.txt" in [entry["name"] for entry in disk.list_entries()]
+
+
+def test_disk_rejects_names_reserved_for_temp_files(tmp_path: Path) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+
+    with pytest.raises(DiskPathError, match="temporary"):
+        disk.write_text("sub/.yukiyasha-ab12cd34", "x")
+
+
+def test_disk_protects_builtin_directories_by_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A differently-spelled path to the same directory (case-insensitive FS) stays protected."""
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+    real = (tmp_path / "disk" / "projects" / "work").resolve()
+    # Simulate "projects/WORK" resolving to the real directory, as on NTFS or APFS.
+    monkeypatch.setattr(disk, "_resolve", lambda _path: real)
+
+    with pytest.raises(DiskSecurityError, match="cannot be deleted"):
+        disk.delete("projects/WORK")
+    assert real.is_dir()
+
+
+def test_disk_overwrite_preserves_file_mode(tmp_path: Path) -> None:
+    if os.name == "nt":
+        pytest.skip("POSIX permission bits")
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+    disk.write_text("script.sh", "one")
+    target = tmp_path / "disk" / "script.sh"
+    target.chmod(0o644)
+
+    disk.write_text("script.sh", "two")
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    assert disk.read_text("script.sh") == "two"
+
+
+def test_disk_rejects_paths_whose_real_target_escapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NTFS junctions are not symlinks; the fully resolved path must still stay inside."""
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    original = os.path.realpath
+
+    def fake_realpath(path, *args, **kwargs):
+        if str(path).endswith("junction"):
+            return str(outside)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(os.path, "realpath", fake_realpath)
+
+    with pytest.raises(DiskSecurityError, match="escapes"):
+        disk.list_entries("junction")

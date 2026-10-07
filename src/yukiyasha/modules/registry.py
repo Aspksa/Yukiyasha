@@ -34,7 +34,11 @@ class ModuleRegistry:
 
     def register(self, module: Module) -> None:
         module_id = module.manifest.module_id
-        if not module_id or not module_id.replace("-", "").replace("_", "").isalnum():
+        if (
+            not module_id
+            or not module_id.isascii()
+            or not module_id.replace("-", "").replace("_", "").isalnum()
+        ):
             raise ValueError(f"Invalid module id: {module_id!r}")
         if module_id in self._modules:
             raise ValueError(f"Module already registered: {module_id}")

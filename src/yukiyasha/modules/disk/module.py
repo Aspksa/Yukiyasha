@@ -2,6 +2,8 @@
 
 import errno
 import os
+import re
+import stat
 import tempfile
 from pathlib import Path
 
@@ -11,7 +13,10 @@ from yukiyasha.version import get_version
 
 MAX_TEXT_BYTES = 1_048_576
 TEMP_PREFIX = ".yukiyasha-"
-PROTECTED_DIRS = {Path("projects"), Path("projects/work"), Path("projects/home")}
+# tempfile.mkstemp() appends exactly eight characters from [a-z0-9_]. Only names of this exact
+# shape are internal; ordinary user files that merely start with the prefix are left alone.
+TEMP_NAME_RE = re.compile(r"^\.yukiyasha-[A-Za-z0-9_]{8}$")
+PROTECTED_DIRS = (Path("projects"), Path("projects/work"), Path("projects/home"))
 WINDOWS_RESERVED_NAMES = {
     "CON", "PRN", "AUX", "NUL",
     *(f"COM{i}" for i in range(1, 10)),
@@ -124,7 +129,7 @@ class DiskModule:
             visible = [
                 item
                 for item in directory.iterdir()
-                if not item.is_symlink() and not item.name.startswith(TEMP_PREFIX)
+                if not item.is_symlink() and not TEMP_NAME_RE.match(item.name)
             ]
             visible.sort(key=lambda value: (not value.is_dir(), value.name.lower()))
             entries: list[dict[str, object]] = []
@@ -201,7 +206,7 @@ class DiskModule:
 
         temp_path: Path | None = None
         try:
-            fd, raw_temp_path = tempfile.mkstemp(prefix=".yukiyasha-", dir=path.parent)
+            fd, raw_temp_path = tempfile.mkstemp(prefix=TEMP_PREFIX, dir=path.parent)
             temp_path = Path(raw_temp_path)
             with os.fdopen(fd, "wb") as handle:
                 handle.write(encoded)
@@ -209,6 +214,7 @@ class DiskModule:
                 os.fsync(handle.fileno())
 
             if overwrite:
+                self._copy_mode(path, temp_path)
                 os.replace(temp_path, path)
             else:
                 try:
@@ -257,12 +263,12 @@ class DiskModule:
 
     def delete(self, relative_path: str) -> None:
         self._require_ready()
-        relative = self._validated_relative(relative_path)
-        if relative in PROTECTED_DIRS:
-            raise DiskSecurityError("Built-in project directories cannot be deleted")
+        self._validated_relative(relative_path)
         path = self._resolve(relative_path)
         if path == self.root.resolve():
             raise DiskSecurityError("The disk root cannot be deleted")
+        if self._is_protected(path):
+            raise DiskSecurityError("Built-in project directories cannot be deleted")
         try:
             if not path.exists():
                 raise FileNotFoundError(relative_path)
@@ -307,13 +313,14 @@ class DiskModule:
                 raise self._translate_os_error(exc) from exc
             current = candidate
 
+        # is_symlink() does not detect NTFS junctions, so also compare the fully resolved path.
         try:
-            parent = current.parent.resolve()
+            real = Path(os.path.realpath(current))
         except ValueError as exc:
             raise DiskPathError("Invalid filesystem path") from exc
         except OSError as exc:
             raise self._translate_os_error(exc) from exc
-        if not parent.is_relative_to(root):
+        if not real.is_relative_to(root):
             raise DiskSecurityError("Path escapes Yukiyasha Disk")
         return current
 
@@ -340,17 +347,45 @@ class DiskModule:
                 raise DiskPathError("Path components cannot end with a space or dot")
             if part.split(".", 1)[0].upper() in WINDOWS_RESERVED_NAMES:
                 raise DiskPathError("Reserved Windows device names are not allowed")
+            if TEMP_NAME_RE.match(part):
+                raise DiskPathError("This name is reserved for internal temporary files")
         return raw
 
     def _cleanup_temp_files(self) -> None:
         for directory, dirnames, filenames in os.walk(self.root, followlinks=False):
             dirnames[:] = [name for name in dirnames if not (Path(directory) / name).is_symlink()]
             for filename in filenames:
-                if filename.startswith(TEMP_PREFIX):
+                if TEMP_NAME_RE.match(filename):
                     try:
                         (Path(directory) / filename).unlink(missing_ok=True)
                     except OSError:
                         continue
+
+    def _is_protected(self, path: Path) -> bool:
+        """True when ``path`` is one of the built-in directories (identity, not spelling).
+
+        Comparing file identity keeps the protection intact on case-insensitive filesystems.
+        """
+        try:
+            target = path.stat()
+        except OSError:
+            return False
+        root = self.root.resolve()
+        for protected in PROTECTED_DIRS:
+            try:
+                if os.path.samestat(target, (root / protected).stat()):
+                    return True
+            except OSError:
+                continue
+        return False
+
+    @staticmethod
+    def _copy_mode(source: Path, temp_path: Path) -> None:
+        """Keep the permission bits of a file that is being replaced."""
+        try:
+            os.chmod(temp_path, stat.S_IMODE(source.stat().st_mode))
+        except OSError:
+            pass  # new file, or the filesystem has no POSIX modes
 
     def _require_ready(self) -> None:
         if self.state is not ModuleState.READY:

@@ -14,20 +14,20 @@ from yukiyasha.config import Settings
 from yukiyasha.core import YukiyashaRuntime
 from yukiyasha.modules.disk import (
     DiskConflictError,
-    DiskDirectoryNotEmptyError,
     DiskEncodingError,
     DiskError,
+    DiskNotReadyError,
     DiskPathError,
     DiskPermissionError,
     DiskSecurityError,
     DiskTooLargeError,
 )
 from yukiyasha.modules.registry import ModuleState
-from yukiyasha.web.middleware import RequestBodyLimitMiddleware
+from yukiyasha.web.middleware import RequestBodyLimitMiddleware, SecurityHeadersMiddleware
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 MAX_REQUEST_BODY_BYTES = 2 * 1_048_576
-ALLOWED_BROWSER_HOSTS = {"127.0.0.1", "localhost", "::1"}
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 
 
 class DiskWriteRequest(BaseModel):
@@ -36,7 +36,30 @@ class DiskWriteRequest(BaseModel):
     overwrite: bool = True
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def _is_same_origin(origin: str, request: Request) -> bool:
+    parts = urlsplit(origin)
+    host = request.headers.get("host", "")
+    return parts.scheme == request.url.scheme and parts.netloc.lower() == host.lower()
+
+
+def disk_http_error(exc: DiskError) -> HTTPException:
+    """Map a disk-domain error to one consistent HTTP status."""
+    if isinstance(exc, DiskNotReadyError):
+        return HTTPException(status_code=503, detail=str(exc))
+    if isinstance(exc, DiskPermissionError):
+        return HTTPException(status_code=403, detail=str(exc))
+    if isinstance(exc, DiskTooLargeError):
+        return HTTPException(status_code=413, detail=str(exc))
+    if isinstance(exc, DiskConflictError):  # includes DiskDirectoryNotEmptyError
+        return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, DiskSecurityError | DiskPathError | DiskEncodingError):
+        return HTTPException(status_code=400, detail=str(exc))
+    return HTTPException(status_code=500, detail="Filesystem operation failed")
+
+
+def create_app(
+    settings: Settings | None = None, *, extra_allowed_hosts: tuple[str, ...] = ()
+) -> FastAPI:
     resolved_settings = settings or Settings.from_env()
     runtime = YukiyashaRuntime(resolved_settings)
 
@@ -57,19 +80,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.runtime = runtime
     application.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=["127.0.0.1", "localhost", "testserver", "[::1]"],
+        TrustedHostMiddleware, allowed_hosts=[*LOCAL_HOSTS, *extra_allowed_hosts]
     )
     application.add_middleware(RequestBodyLimitMiddleware, max_bytes=MAX_REQUEST_BODY_BYTES)
+    application.add_middleware(SecurityHeadersMiddleware)
 
     @application.middleware("http")
     async def protect_local_disk_api(request: Request, call_next):
         if request.url.path.startswith("/api/disk"):
             origin = request.headers.get("origin")
-            if origin:
-                origin_host = urlsplit(origin).hostname
-                if origin_host not in ALLOWED_BROWSER_HOSTS:
-                    return JSONResponse({"detail": "Origin is not allowed"}, status_code=403)
+            # The UI is served from this very origin, so anything else (another site, or
+            # another local app on a different port) is a cross-origin request.
+            if origin and not _is_same_origin(origin, request):
+                return JSONResponse({"detail": "Origin is not allowed"}, status_code=403)
         return await call_next(request)
 
     application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -108,12 +131,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Directory not found") from exc
         except NotADirectoryError as exc:
             raise HTTPException(status_code=400, detail="Path is not a directory") from exc
-        except DiskPermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
-        except (DiskSecurityError, DiskPathError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except DiskError as exc:
-            raise HTTPException(status_code=500, detail="Filesystem operation failed") from exc
+            raise disk_http_error(exc) from exc
 
     @application.get("/api/disk/file")
     def disk_read(path: str) -> dict[str, str]:
@@ -124,14 +143,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="File not found") from exc
         except IsADirectoryError as exc:
             raise HTTPException(status_code=400, detail="Path is a directory") from exc
-        except DiskPermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
-        except DiskTooLargeError as exc:
-            raise HTTPException(status_code=413, detail=str(exc)) from exc
-        except (DiskSecurityError, DiskPathError, DiskEncodingError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except DiskError as exc:
-            raise HTTPException(status_code=500, detail="Filesystem operation failed") from exc
+            raise disk_http_error(exc) from exc
 
     @application.put("/api/disk/file")
     def disk_write(request: DiskWriteRequest) -> dict[str, object]:
@@ -139,16 +152,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             runtime.disk.write_text(request.path, request.content, overwrite=request.overwrite)
             return {"status": "ok", "path": request.path}
-        except DiskPermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
-        except DiskTooLargeError as exc:
-            raise HTTPException(status_code=413, detail=str(exc)) from exc
-        except DiskConflictError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except (DiskSecurityError, DiskPathError, DiskEncodingError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except DiskError as exc:
-            raise HTTPException(status_code=500, detail="Filesystem operation failed") from exc
+            raise disk_http_error(exc) from exc
 
     @application.delete("/api/disk/file")
     def disk_delete(path: str) -> dict[str, str]:
@@ -158,14 +163,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return {"status": "ok", "path": path}
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="File not found") from exc
-        except DiskPermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
-        except DiskDirectoryNotEmptyError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except (DiskSecurityError, DiskPathError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except DiskError as exc:
-            raise HTTPException(status_code=500, detail="Filesystem operation failed") from exc
+            raise disk_http_error(exc) from exc
 
     return application
 

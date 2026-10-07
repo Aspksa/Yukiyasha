@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ from yukiyasha.config import Settings
 from yukiyasha.modules.disk import DiskPermissionError
 from yukiyasha.version import get_version
 from yukiyasha.web.app import MAX_REQUEST_BODY_BYTES, create_app
+from yukiyasha.web.middleware import RequestBodyLimitMiddleware
 
 
 @pytest.fixture
@@ -137,6 +139,49 @@ def test_http_body_limit_rejects_before_json_parsing(client: TestClient) -> None
     assert response.status_code == 413
     assert response.json()["detail"] == "Request body too large"
 
+
+
+def test_http_body_limit_rejects_chunked_stream_without_content_length() -> None:
+    sent: list[dict[str, object]] = []
+    chunks = iter(
+        [
+            {"type": "http.request", "body": b"abc", "more_body": True},
+            {"type": "http.request", "body": b"def", "more_body": False},
+        ]
+    )
+
+    async def downstream(scope, receive, send) -> None:
+        raise AssertionError("Oversized body must not reach downstream app")
+
+    async def receive() -> dict[str, object]:
+        return next(chunks)
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    async def run() -> None:
+        middleware = RequestBodyLimitMiddleware(downstream, max_bytes=5)
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "PUT",
+            "scheme": "http",
+            "path": "/api/disk/file",
+            "raw_path": b"/api/disk/file",
+            "query_string": b"",
+            "headers": [(b"content-type", b"application/json")],
+            "client": ("127.0.0.1", 12345),
+            "server": ("127.0.0.1", 8000),
+        }
+        await middleware(scope, receive, send)
+
+    asyncio.run(run())
+
+    assert sent[0]["type"] == "http.response.start"
+    assert sent[0]["status"] == 413
+    assert sent[1]["type"] == "http.response.body"
+    assert b"Request body too large" in sent[1]["body"]
 
 def test_delete_non_empty_directory_is_409(client: TestClient) -> None:
     client.put("/api/disk/file", json={"path": "folder/file.txt", "content": "data"})

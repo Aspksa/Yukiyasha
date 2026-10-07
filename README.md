@@ -23,9 +23,25 @@ The first release establishes:
 
 ### Windows — one click
 
-Double-click `Yukiyasha.bat`. On the first launch it creates a local `.venv`,
-installs the project dependencies, starts the web server, and opens
-`http://127.0.0.1:8000` in the default browser.
+Double-click `Yukiyasha.bat`.
+
+The launcher is fully localized in Russian and:
+- verifies Python 3.11+;
+- creates and validates `.venv`;
+- installs missing dependencies;
+- checks whether the selected port is free;
+- detects an already running Yukiyasha instance;
+- automatically tries ports 8000–8010 when 8000 is occupied;
+- honors `YUKIYASHA_PORT` when you want a fixed port;
+- waits for `/api/health` before opening the browser;
+- works from any folder path because it always starts from its own directory.
+
+Example fixed port:
+
+```bat
+set YUKIYASHA_PORT=8090
+Yukiyasha.bat
+```
 
 ### Manual launch
 

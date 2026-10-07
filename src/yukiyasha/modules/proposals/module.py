@@ -36,7 +36,6 @@ PROPOSALS_MANIFEST = ModuleManifest(
     permissions=(
         "disk.read",
         "disk.write",
-        "disk.delete",
         "primavtodor.read",
         "primavtodor.write",
         "primavtodor.delete",

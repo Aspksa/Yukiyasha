@@ -121,3 +121,30 @@ def test_a_booking_can_be_changed_and_removed_by_proposal(setup) -> None:
     proposals.apply(str(gone["id"]))
     with pytest.raises(Exception):  # noqa: B017 - RecordNotFoundError
         module.bookings.record(created["id"])
+
+
+def test_natural_booking_verbs_open_the_proposal_tool(setup) -> None:
+    _, _, tools, _, _ = setup
+    for message in (
+        "Забронируй машину на среду",
+        "Перенеси поездку Веровского на пятницу",
+        "Отмени командировку",
+        "Продли выезд на день",
+    ):
+        names = {d["function"]["name"] for d in tools.definitions(message)}
+        assert "primavtodor_propose_change" in names, message
+
+
+def test_a_long_schedule_says_it_was_cut(setup) -> None:
+    module, _, tools, car, driver = setup
+    for day in range(1, 29):  # 28 days x 2 trips: more than the tool returns
+        for _ in range(2):
+            module.bookings.create(
+                {"vehicle_id": car["id"], "driver_id": driver["id"],
+                 "date_from": f"2026-11-{day:02d}", "date_to": f"2026-11-{day:02d}", "kind": "trip"}
+            )  # fmt: skip
+
+    result = call(tools, "primavtodor_schedule", {"day": "2026-11-01", "days": 31}, "график")
+
+    assert result["bookings_total"] == 56 and result["bookings_truncated"] is True
+    assert len(result["bookings"]) == 40

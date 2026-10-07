@@ -46,6 +46,7 @@ FORGET_TRIGGER = re.compile(
 )
 MUTATION_TRIGGER = re.compile(
     r"создай|добавь|измени|обнови|исправь|удали|оформи|закрой|назначь|запиши|поставь|"
+    r"забронируй|бронь|перенес[иё]|отмени|сдвинь|продли|сократи|убери|отметь|запланируй|"
     r"предложи измен|подготовь измен",
     re.IGNORECASE,
 )
@@ -549,13 +550,14 @@ class AiToolRegistry:
         view = self._primavtodor.schedule(day, days)
         keep = ("id", "vehicle", "driver", "span", "kind_label", "note", "conflicts")
         free = view["free"]
+        rows = view["bookings"]
+        limit = MAX_LIST_ITEMS * 2
         return {
             "from": view["start"],
             "to": view["end"],
-            "bookings": [
-                {key: row[key] for key in keep}
-                for row in view["bookings"][: MAX_LIST_ITEMS * 2]  # type: ignore[index]
-            ],
+            "bookings_total": len(rows),  # type: ignore[arg-type]
+            "bookings_truncated": len(rows) > limit,  # type: ignore[arg-type]
+            "bookings": [{key: row[key] for key in keep} for row in rows[:limit]],  # type: ignore[index]
             "free_on": free["day"],  # type: ignore[index]
             "free_vehicles": [
                 {"id": v["id"], "plate": v["plate"], "model": v["model"], "next": v["next"]}

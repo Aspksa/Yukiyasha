@@ -171,7 +171,7 @@ def test_memory_mutation_requires_explicit_user_word_and_audits_without_content(
     assert found["memories"][0]["id"] == saved["id"]
 
     refused_forget = json.loads(
-        tools.execute("memory_forget", {"memory_id": saved["id"]}, "Что там в памяти?")
+        tools.execute("memory_forget", {"query": "короткие ответы"}, "Что там в памяти?")
     )
     assert refused_forget["error"]
     assert len(memory.list_items()) == 1
@@ -179,8 +179,8 @@ def test_memory_mutation_requires_explicit_user_word_and_audits_without_content(
     forgotten = json.loads(
         tools.execute(
             "memory_forget",
-            {"memory_id": saved["id"]},
-            "Забудь эту запись",
+            {"query": "короткие ответы"},
+            "Забудь, что я люблю короткие ответы",
         )
     )
     assert forgotten["status"] == "forgotten"
@@ -208,3 +208,18 @@ def test_memory_tool_cannot_store_a_secret_even_on_explicit_request(tmp_path: Pa
     assert "error" in result
     assert "Пароли" in result["error"]
     assert memory.list_items() == []
+
+
+
+def test_forget_matching_refuses_ambiguous_memory(tmp_path: Path) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+    memory = MemoryModule(disk)
+    memory.start()
+    memory.remember("Пользователь любит короткие ответы")
+    memory.remember("Пользователь любит короткие отчёты")
+
+    with pytest.raises(MemoryValidationError):
+        memory.forget_matching("пользователь любит короткие")
+
+    assert len(memory.list_items()) == 2

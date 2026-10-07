@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-for /f "tokens=2 delims=: " %%C in ('chcp') do set "ORIGINAL_CODEPAGE=%%C"
+for /f "tokens=2 delims=:" %%C in ('chcp') do set "ORIGINAL_CODEPAGE=%%C"
 chcp 65001 >nul
 title Yukiyasha — launcher
 
@@ -35,6 +35,9 @@ echo ║                 Y U K I Y A S H A            ║
 echo ║            локальный веб-лаунчер             ║
 echo ╚══════════════════════════════════════════════╝
 echo.
+
+call :validate_port
+if errorlevel 1 goto :fatal
 
 call :check_python
 if errorlevel 1 goto :fatal
@@ -162,7 +165,7 @@ exit /b 0
 
 :ensure_dependencies
 echo [4/5] Проверка зависимостей...
-for /f "usebackq delims=" %%H in (`powershell -NoProfile -Command "(Get-FileHash -Algorithm SHA256 'pyproject.toml').Hash"`) do set "CURRENT_DEPS_HASH=%%H"
+for /f "delims=" %%H in ('%PYTHON_EXE% -c "import hashlib,pathlib; print(hashlib.sha256(pathlib.Path('pyproject.toml').read_bytes()).hexdigest())"') do set "CURRENT_DEPS_HASH=%%H"
 if not defined CURRENT_DEPS_HASH (
     echo [ОШИБКА] Не удалось вычислить контрольную сумму pyproject.toml.
     exit /b 1
@@ -204,17 +207,19 @@ if not exist "%DEPS_MARKER%" >"%DEPS_MARKER%" echo %CURRENT_DEPS_HASH%
 echo [OK] Зависимости соответствуют pyproject.toml.
 exit /b 0
 
-:select_port
-echo [5/5] Проверка порта...
+:validate_port
 set "PORT_CANDIDATE=%PORT%"
 powershell -NoProfile -Command ^
   "$v=$env:PORT_CANDIDATE; $p=0;" ^
-  "if(($v -match '^[1-9]\d{0,4}$') -and [int]::TryParse($v,[ref]$p) -and $p -le 65535){exit 0}else{exit 1}" >nul 2>&1
+  "if([int]::TryParse($v,[ref]$p) -and $p -ge 1 -and $p -le 65535 -and $v -ceq $p.ToString()){exit 0}else{exit 1}" >nul 2>&1
 if errorlevel 1 (
     echo [ОШИБКА] Некорректный порт: "%PORT%"
     exit /b 1
 )
+exit /b 0
 
+:select_port
+echo [5/5] Проверка порта...
 set /a CURRENT_PORT=%PORT%
 
 :port_loop

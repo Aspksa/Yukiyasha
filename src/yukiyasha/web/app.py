@@ -42,6 +42,12 @@ from yukiyasha.modules.memory import (
     MemoryNotFoundError,
     MemoryValidationError,
 )
+from yukiyasha.modules.proposals import (
+    ProposalError,
+    ProposalNotFoundError,
+    ProposalStateError,
+    ProposalValidationError,
+)
 from yukiyasha.modules.primavtodor import (
     PrimavtodorError,
     RecordInUseError,
@@ -140,6 +146,17 @@ def memory_http_error(exc: MemoryError | DiskError) -> HTTPException:
     if isinstance(exc, MemoryValidationError):
         return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, MemoryLimitError):
+        return HTTPException(status_code=409, detail=str(exc))
+    return HTTPException(status_code=400, detail=str(exc))
+
+
+def proposal_http_error(exc: ProposalError) -> HTTPException:
+    """Map proposal lifecycle failures to stable HTTP statuses."""
+    if isinstance(exc, ProposalNotFoundError):
+        return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, ProposalValidationError):
+        return HTTPException(status_code=422, detail=str(exc))
+    if isinstance(exc, ProposalStateError):
         return HTTPException(status_code=409, detail=str(exc))
     return HTTPException(status_code=400, detail=str(exc))
 
@@ -272,6 +289,14 @@ def create_app(
         except (MemoryError, DiskError) as exc:
             raise memory_http_error(exc) from exc
 
+    def proposal_call(action: Callable[[], T]) -> T:
+        if runtime.proposals.state is not ModuleState.READY:
+            raise HTTPException(status_code=503, detail="Proposal module is not ready")
+        try:
+            return action()
+        except ProposalError as exc:
+            raise proposal_http_error(exc) from exc
+
     def ai_call(action: Callable[[], T]) -> T:
         if runtime.ai.state is not ModuleState.READY:
             raise HTTPException(status_code=503, detail={"message": "Помощник не запущен"})
@@ -298,6 +323,28 @@ def create_app(
     def memory_forget(memory_id: str) -> dict[str, str]:
         memory_call(lambda: runtime.memory.forget(memory_id))
         return {"status": "forgotten", "id": memory_id}
+
+    @application.get("/api/proposals")
+    def proposal_list(status: str | None = Query(default=None)) -> dict[str, object]:
+        items = proposal_call(runtime.proposals.list_items)
+        if status is not None:
+            items = [item for item in items if item.get("status") == status]
+        return {"proposals": items}
+
+    @application.get("/api/proposals/{proposal_id}")
+    def proposal_get(proposal_id: str) -> dict[str, object]:
+        return proposal_call(lambda: runtime.proposals.get(proposal_id))
+
+    @application.post("/api/proposals/{proposal_id}/approve")
+    def proposal_approve(proposal_id: str) -> dict[str, object]:
+        proposal = proposal_call(lambda: runtime.proposals.apply(proposal_id))
+        if proposal.get("status") == "stale":
+            raise HTTPException(status_code=409, detail=proposal)
+        return proposal
+
+    @application.post("/api/proposals/{proposal_id}/reject")
+    def proposal_reject(proposal_id: str) -> dict[str, object]:
+        return proposal_call(lambda: runtime.proposals.reject(proposal_id))
 
     @application.get("/api/ai/status")
     def ai_status() -> dict[str, object]:

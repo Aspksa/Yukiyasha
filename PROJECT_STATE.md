@@ -20,7 +20,7 @@
 - 1 MiB text limit and 2 MiB HTTP body limit.
 - Stable default disk root under `~/.yukiyasha/disk`.
 - Host and browser Origin validation for the local API.
-- Work/home project browser backed by Yukiyasha Disk.
+- Browser workspace: file browser, text editor, create/delete and system page backed by Yukiyasha Disk.
 - Isolated API tests using temporary disk roots.
 - Windows launcher dependency fingerprinting and safer port fallback.
 - Two-tier GitHub Actions CI with stable `PR Gate`.

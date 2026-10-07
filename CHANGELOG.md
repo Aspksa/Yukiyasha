@@ -2,6 +2,26 @@
 
 All notable changes to Yukiyasha are documented here.
 
+## [Unreleased]
+
+### Added
+- browser workspace: sidebar navigation (work, home, whole disk, system), breadcrumbs,
+  folder navigation, name filter, text editor with save (Ctrl+S), file creation with
+  automatic sub-folders and deletion with confirmation;
+- system page with runtime state and module manifests/permissions;
+- light theme through `prefers-color-scheme`, responsive layout for phones;
+- unsaved-changes guard, deep links through the URL hash (`#d=…`, `#f=…`, `#system`).
+
+### Changed
+- UI is now a work tool instead of a landing page: files first, diagnostics on a separate page;
+- all interface text is Russian; sizes and counts are formatted and pluralised;
+- design tokens (CSS variables) and AA-level text contrast;
+- API errors are translated into clear Russian messages.
+
+### Accessibility
+- skip link, focus rings, `aria-current`, live regions for status and toasts,
+  native `<dialog>` for modals, `prefers-reduced-motion` support.
+
 ## [0.2.1] - 2026-10-07
 
 ### Fixed

@@ -759,6 +759,7 @@ async function pvApplyImport(event) {
     const slot = pvById("import-error");
     slot.textContent = describeError(error);
     slot.hidden = false;
+    button.disabled = false; // some fill-ups may already be loaded; a retry only adds the rest
   }
 }
 

@@ -239,3 +239,30 @@ def test_import_over_http(client: TestClient) -> None:
     assert applied.json()["applied"] is True
     assert len(client.get("/api/primavtodor/records/fuel").json()["records"]) == 1
     assert bad.status_code == 422 and "xlsx" in bad.json()["detail"]["message"]
+
+
+def test_a_second_real_fill_up_is_not_swallowed_by_a_hand_entered_one(module) -> None:
+    waybill = prepare(module)
+    module.data.create("fuel", {"waybill_id": waybill["id"], "date": "2026-10-07", "liters": 40})
+    rows = statement_rows((CARD, [("07.10.2026", "09:00:00", PETROL, 70.0, 40.0),
+                                  ("07.10.2026", "15:00:00", PETROL, 70.0, 40.0)]))  # fmt: skip
+
+    report = module.import_fuel_statement(xlsx(rows), "s.xlsx", apply=True)
+
+    assert report["counts"]["duplicate"] == 1 and report["counts"]["new"] == 1
+    assert len(module.data.snapshot("fuel")) == 2
+
+
+def test_a_changed_driver_card_does_not_make_old_fill_ups_look_new(module) -> None:
+    waybill = prepare(module)
+    content = xlsx(statement_rows((CARD, [("07.10.2026", "09:17:16", PETROL, 70.0, 40.0)])))
+    module.import_fuel_statement(content, "s.xlsx", apply=True)
+    driver = module.data.get("employees", waybill["values"]["driver_id"])["values"]
+    module.data.update("employees", waybill["values"]["driver_id"],
+                       {**driver, "fuel_card_number": "7001000099999"})  # fmt: skip
+    moved = ("7001000099999", [("07.10.2026", "09:17:16", PETROL, 70.0, 40.0)])
+    again = xlsx(statement_rows(moved))
+
+    report = module.import_fuel_statement(again, "s2.xlsx", apply=True)
+
+    assert report["counts"]["duplicate"] == 1 and len(module.data.snapshot("fuel")) == 1

@@ -156,6 +156,13 @@ class ChatTurn:
         finally:
             self.release()
 
+    def __del__(self) -> None:
+        # A response dropped before the stream started never reaches the generator's ``finally``.
+        try:
+            self.release()
+        except Exception:  # noqa: BLE001 - never raise from a finaliser
+            pass
+
     def release(self) -> None:
         if self._released:
             return
@@ -181,6 +188,7 @@ class AiModule:
         self._provider = provider
         self._tools = tools
         self._slots = threading.BoundedSemaphore(MAX_CONCURRENT)
+        self._save_lock = threading.Lock()
         self._state = ModuleState.REGISTERED
         self._last_error: str | None = None
 
@@ -321,6 +329,21 @@ class AiModule:
         example_ids: list[str],
         documents: list[dict[str, object]] | None = None,
     ) -> None:
+        with self._save_lock:
+            self._append_turn(chat, user_text, answer, example_ids, documents)
+
+    def _append_turn(
+        self,
+        chat: dict[str, object],
+        user_text: str,
+        answer: str,
+        example_ids: list[str],
+        documents: list[dict[str, object]] | None,
+    ) -> None:
+        try:  # another turn may have saved to this conversation while this one was streaming
+            chat = self.get_chat(str(chat["id"]))
+        except ConversationNotFoundError:
+            pass
         now = _now()
         messages = chat.setdefault("messages", [])
         assert isinstance(messages, list)

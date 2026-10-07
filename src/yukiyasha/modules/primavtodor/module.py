@@ -314,6 +314,7 @@ class PrimavtodorModule:
         waybills.sort(key=lambda w: (str(w.get("date")), str(w.get("number"))))
         fuel = self.data.snapshot(KIND_FUEL)
 
+        views = {r["id"]: r for r in self.data.list_records(KIND_WAYBILLS)["records"]}
         by_driver: dict[str, list[dict[str, object]]] = {}
         for waybill in waybills:
             by_driver.setdefault(str(waybill.get("driver_id")), []).append(waybill)
@@ -331,7 +332,7 @@ class PrimavtodorModule:
             norms: list[float] = []
             rates: set[float | None] = set()
             for waybill in driver_waybills:
-                view = self.data.get(KIND_WAYBILLS, str(waybill["id"]))["computed"]
+                view = views[waybill["id"]]["computed"]
                 if view.get("distance") is None:
                     continue  # an open waybill has no mileage or consumption yet
                 distance += float(view["distance"])
@@ -374,6 +375,7 @@ class PrimavtodorModule:
         ]
         waybills = sorted(in_month, key=lambda w: (str(w.get("date")), str(w.get("number"))))
 
+        views = {r["id"]: r for r in self.data.list_records(KIND_WAYBILLS)["records"]}
         rows: list[VehicleRow] = []
         for vehicle in sorted(self.data.snapshot(KIND_VEHICLES), key=lambda v: str(v.get("plate"))):
             own = [w for w in waybills if w.get("vehicle_id") == vehicle["id"]]
@@ -398,7 +400,7 @@ class PrimavtodorModule:
             )
             open_count = 0
             for waybill in own:
-                computed = self.data.get(KIND_WAYBILLS, str(waybill["id"]))["computed"]
+                computed = views[waybill["id"]]["computed"]
                 if computed.get("distance") is None:
                     open_count += 1
                     continue

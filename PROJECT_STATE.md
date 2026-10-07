@@ -21,6 +21,7 @@
 - Stable default disk root under `~/.yukiyasha/disk`.
 - Host and browser Origin validation for the local API.
 - Module Примавтодор: ten sections on the disk; linked records (employees with fuel card + car, vehicles, waybills, fuel) validated against a schema, seasonal (summer/winter) fuel norms with one switch, a timesheet built from waybills, REST API and UI pages. No document templates (orders, memos, offers) yet.
+- Printing and fuel reports (unreleased): waybill form № 3 as the organisation's own .xlsx, fuel-card statement import, monthly fuel card, monthly «Анализ расхода ГСМ». Forms № 3 спец. and № 4-П are not printable yet.
 - AI assistant: streamed chat with any OpenAI-compatible API by the user's own key; persona and conversations on the disk; sees no business data yet.
 - Browser workspace: file browser, text editor, create/delete and system page backed by Yukiyasha Disk.
 - Isolated API tests using temporary disk roots.

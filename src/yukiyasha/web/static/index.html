@@ -191,6 +191,10 @@
               <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
               <span>Данные для печати</span>
             </button>
+            <button class="btn" id="entity-report" type="button" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+              <span>Анализ за месяц</span>
+            </button>
             <button class="btn" id="entity-import" type="button" hidden>
               <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
               <span>Загрузить выписку</span>
@@ -393,6 +397,19 @@
       <div class="dlg-actions">
         <button class="btn" type="button" data-close>Закрыть</button>
         <button class="btn btn-primary" type="submit" id="import-apply" disabled>Загрузить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-report" aria-labelledby="dlg-report-title">
+    <form method="dialog" id="form-report" novalidate>
+      <h2 id="dlg-report-title">Анализ расхода ГСМ</h2>
+      <p class="dlg-note">Таблица по всем машинам за месяц: пробег, остатки, заправка, расход по факту и по норме. ФИО подписантов задаются в «Данные для печати» на странице путевых листов.</p>
+      <div class="field"><label for="report-month">Месяц</label><input type="month" id="report-month"></div>
+      <p class="dlg-error" id="report-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>Закрыть</button>
+        <button class="btn btn-primary" type="submit" id="report-download">Скачать (.xlsx)</button>
       </div>
     </form>
   </dialog>

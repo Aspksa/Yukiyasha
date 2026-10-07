@@ -156,6 +156,8 @@ function pvWire() {
   pvById("entity-new").addEventListener("click", () => void pvOpenForm(null));
   pvById("entity-filter").addEventListener("input", pvRenderEntity);
 
+  pvById("entity-report").addEventListener("click", pvOpenReport);
+  pvById("form-report").addEventListener("submit", (event) => void pvDownloadReport(event));
   pvById("entity-import").addEventListener("click", pvOpenImport);
   pvById("import-file").addEventListener("change", () => void pvPreviewImport());
   pvById("form-import").addEventListener("submit", (event) => void pvApplyImport(event));
@@ -190,6 +192,7 @@ function pvShowEntity(entity) {
   pvById("entity-filter").value = "";
   pvById("entity-print-settings").hidden = entity.kind !== "waybills";
   pvById("entity-import").hidden = entity.kind !== "fuel";
+  pvById("entity-report").hidden = entity.kind !== "fuel";
   pvById("entity-table").querySelector("tbody").replaceChildren();
   pvById("entity-count").textContent = "";
   pvById("entity-empty").hidden = true;
@@ -756,6 +759,37 @@ async function pvApplyImport(event) {
     const slot = pvById("import-error");
     slot.textContent = describeError(error);
     slot.hidden = false;
+  }
+}
+
+/* ---------- monthly fuel analysis ---------- */
+
+function pvOpenReport() {
+  if (!pvById("report-month").value) pvById("report-month").value = PV_UTIL.currentMonth();
+  pvById("report-error").hidden = true;
+  pvById("dlg-report").showModal();
+}
+
+async function pvDownloadReport(event) {
+  event.preventDefault();
+  const month = pvById("report-month").value;
+  const slot = pvById("report-error");
+  slot.hidden = true;
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    slot.textContent = "Выберите месяц";
+    slot.hidden = false;
+    return;
+  }
+  const button = pvById("report-download");
+  button.disabled = true;
+  try {
+    const name = await pvDownload(`/api/primavtodor/reports/fuel?${new URLSearchParams({ month })}`);
+    toast(`Отчёт сохранён: ${name}`);
+  } catch (error) {
+    slot.textContent = describeError(error);
+    slot.hidden = false;
+  } finally {
+    button.disabled = false;
   }
 }
 

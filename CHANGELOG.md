@@ -5,6 +5,19 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- **Printable waybill** (form № 3, light vehicle): a *Печать* button in the waybill form
+  downloads the organisation's own blank, filled (both the waybill and its copy). New fields:
+  driver's licence number and class, vehicle garage number and waybill form kind, departure and
+  return times. Organisation, signers and the control wording are set in *Данные для печати*.
+  Other forms (№ 3 спец., № 4-П) are refused with a clear message until they are added.
+- **Fuel-card statement import** (ГСМ → *Загрузить выписку*): reads the provider's `.xls`/`.xlsx`,
+  matches every fill-up card -> driver -> that driver's waybill on the date, shows a preview with
+  the reason for everything it cannot match, and never loads the same fill-up twice.
+- **Monthly fuel card** (*Карточка расхода ГСМ*) from the vehicle form: a sheet per driver in the
+  organisation's own card, formulas stay live.
+- **Monthly «Анализ расхода ГСМ»** (ГСМ → *Анализ за месяц*): a row per vehicle, diesel and petrol
+  columns, totals, notes for open waybills and overruns above 10%.
+- Dependencies: `openpyxl` (filling the workbooks) and `xlrd` (reading `.xls` statements).
 - The assistant now speaks as **Юкияша** by default: a bundled character pack (persona, honesty
   rules and 400 example replies in 20 categories). A few replies that fit the message are shown to
   the model as a tone sample (never sent as-is, never repeated within the last 30 answers, none for

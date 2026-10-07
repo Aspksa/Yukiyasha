@@ -32,6 +32,10 @@ PRINT_FIELDS: tuple[tuple[str, str], ...] = (
     ("address", "Адрес подачи"),
     ("mechanic", "Механик / контролёр (ФИО)"),
     ("dispatcher", "Диспетчер-нарядчик (ФИО)"),
+    ("approver_title", "Отчёт ГСМ: «Согласовано» — должность"),
+    ("approver", "Отчёт ГСМ: «Согласовано» — ФИО"),
+    ("composer_title", "Отчёт ГСМ: составил — должность"),
+    ("composer", "Отчёт ГСМ: составил — ФИО"),
 )
 PRINT_KEYS = {key for key, _ in PRINT_FIELDS}
 DEFAULT_PRINT: dict[str, str] = {key: "" for key, _ in PRINT_FIELDS} | {"control": "mechanic"}

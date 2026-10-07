@@ -112,6 +112,17 @@ as ordinary environment variables (they win over the file). `http://` is accepte
 - Cost control: answers are limited by `MAX_TOKENS`, a conversation sends only the most recent
   history that fits the context budget, and at most two answers are produced at a time.
 
+## Printing and fuel reports (Примавтодор)
+
+- **Waybill:** open a waybill → *Печать (.xlsx)* gives the filled form № 3. Fill the organisation,
+  signers and the wording of the control once in *Данные для печати* (waybills page).
+- **Fuel statement:** ГСМ → *Загрузить выписку* (`.xls`/`.xlsx` from the card provider). A preview
+  shows what will be loaded and what cannot be matched; loading the same file again adds nothing.
+  A fill-up is matched through the card number to the driver and to that driver's waybill on the
+  date of the fill-up.
+- **Monthly fuel card:** open a vehicle → choose the month → *Скачать*: a sheet per driver.
+- **Monthly analysis:** ГСМ → *Анализ за месяц*: one row per vehicle with diesel/petrol columns.
+
 ## Quality checks
 
 ```bash

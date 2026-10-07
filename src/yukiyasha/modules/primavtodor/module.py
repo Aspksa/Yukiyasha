@@ -17,7 +17,8 @@ from yukiyasha.modules.primavtodor.errors import (
 )
 from yukiyasha.modules.primavtodor.fuel_import import import_statement
 from yukiyasha.modules.primavtodor.fuelcard import FuelCard, fill_fuel_cards
-from yukiyasha.modules.primavtodor.printing import WaybillForm3, fill_form3
+from yukiyasha.modules.primavtodor.fuelreport import ReportSigners, VehicleRow, fill_fuel_report
+from yukiyasha.modules.primavtodor.printing import WaybillForm3, fill_form3, short_name
 from yukiyasha.modules.primavtodor.records import Records, norm_rate
 from yukiyasha.modules.primavtodor.schema import (
     KIND_EMPLOYEES,
@@ -297,3 +298,69 @@ class PrimavtodorModule:
             )
         plate = re.sub(r"\s+", "", str(vehicle.get("plate") or vehicle_id))
         return fill_fuel_cards(cards), f"Карточка ГСМ {plate} {month}.xlsx"
+
+    # ----- monthly analysis -----
+
+    FORM_KINDS = {"car": "легковой", "special": "спец.", "truck": "грузовой"}
+
+    def fuel_report(self, month: str) -> tuple[bytes, str]:
+        """«Анализ расхода ГСМ» for a month (``ГГГГ-ММ``): a row per vehicle with activity."""
+        try:
+            first = date.fromisoformat(f"{month}-01")
+        except ValueError:
+            raise PrintNotAvailableError("Месяц в формате ГГГГ-ММ, например 2026-10") from None
+        fuel = self.data.snapshot(KIND_FUEL)
+        employees = self.data.snapshot(KIND_EMPLOYEES)
+        names = {e["id"]: str(e.get("full_name") or "") for e in employees}
+        in_month = [
+            w for w in self.data.snapshot(KIND_WAYBILLS) if str(w.get("date", "")).startswith(month)
+        ]
+        waybills = sorted(in_month, key=lambda w: (str(w.get("date")), str(w.get("number"))))
+
+        rows: list[VehicleRow] = []
+        for vehicle in sorted(self.data.snapshot(KIND_VEHICLES), key=lambda v: str(v.get("plate"))):
+            own = [w for w in waybills if w.get("vehicle_id") == vehicle["id"]]
+            if not own:
+                continue
+            ids = {w["id"] for w in own}
+            drivers: list[str] = []
+            for waybill in own:
+                name = short_name(names.get(waybill.get("driver_id"), ""))
+                if name and name not in drivers:
+                    drivers.append(name)
+            row = VehicleRow(
+                plate=str(vehicle.get("plate") or ""),
+                model=str(vehicle.get("model") or ""),
+                kind=self.FORM_KINDS.get(str(vehicle.get("waybill_form") or "car"), "легковой"),
+                drivers=", ".join(drivers) or "Нет водителя",
+                petrol=str(vehicle.get("fuel_type") or "ДТ") != "ДТ",
+                opening=float(own[0].get("fuel_out") or 0),
+                fillups=sum(
+                    float(f.get("liters") or 0) for f in fuel if f.get("waybill_id") in ids
+                ),
+            )
+            open_count = 0
+            for waybill in own:
+                computed = self.data.get(KIND_WAYBILLS, str(waybill["id"]))["computed"]
+                if computed.get("distance") is None:
+                    open_count += 1
+                    continue
+                row.distance_km += int(computed["distance"])
+                row.actual += float(computed.get("consumption") or 0)
+                row.norm += float(computed.get("norm") or 0)
+            notes = []
+            if open_count:
+                notes.append(f"открытых путевых листов: {open_count}")
+            if row.norm and row.actual > row.norm * 1.10:
+                notes.append(f"перерасход {row.actual - row.norm:.1f} л")
+            row.note = "; ".join(notes)
+            rows.append(row)
+
+        settings = self.settings.print_settings()
+        signers = ReportSigners(
+            approver_title=settings["approver_title"],
+            approver=settings["approver"],
+            composer_title=settings["composer_title"],
+            composer=settings["composer"],
+        )
+        return fill_fuel_report(rows, first, signers), f"Анализ расхода ГСМ {month}.xlsx"

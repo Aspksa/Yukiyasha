@@ -341,6 +341,16 @@ def create_app(
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
         )
 
+    @application.get("/api/primavtodor/reports/fuel")
+    def primavtodor_fuel_report(month: str = Query(max_length=7)) -> Response:
+        """Monthly «Анализ расхода ГСМ» for all vehicles as an .xlsx."""
+        content, name = primavtodor_call(lambda: runtime.primavtodor.fuel_report(month))
+        return Response(
+            content=content,
+            media_type=XLSX_TYPE,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
+        )
+
     @application.get("/api/primavtodor/waybills/{waybill_id}/print")
     def primavtodor_print_waybill(waybill_id: str) -> Response:
         content, name = primavtodor_call(lambda: runtime.primavtodor.print_waybill(waybill_id))

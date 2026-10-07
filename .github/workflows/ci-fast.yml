@@ -54,7 +54,16 @@ jobs:
           assert len(names) == len(set(names)), "duplicate files in wheel"
           for required in ("app.js", "util.js", "primavtodor.js", "proposals.js", "documents.js", "ai.js", "index.html", "style.css"):
               assert f"yukiyasha/web/static/{required}" in names, required
-          assert "yukiyasha/modules/ai/character/yukiyasha_pack.json" in names, "character pack"
+          for data in (
+              "modules/ai/character/yukiyasha_pack.json",
+              "modules/primavtodor/forms/waybill_form3.xlsx",
+              "modules/primavtodor/forms/fuel_card.xlsx",
+              "modules/primavtodor/forms/fuel_report.xlsx",
+              "modules/primavtodor/forms/timesheet_t12.xlsx",
+              "modules/primavtodor/calendars/ru-2026.json",
+              "modules/primavtodor/calendars/ru-2027.json",
+          ):
+              assert f"yukiyasha/{data}" in names, data
           PY
 
   windows-launcher:

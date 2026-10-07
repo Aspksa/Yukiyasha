@@ -156,6 +156,19 @@ function pvWire() {
   pvById("entity-new").addEventListener("click", () => void pvOpenForm(null));
   pvById("entity-filter").addEventListener("input", pvRenderEntity);
 
+  pvById("ts-calendar").addEventListener("click", () => void pvOpenCalendar());
+  pvById("cal-year").addEventListener("change", () => void pvShowCalendarYear());
+  pvById("ts-export").addEventListener("click", () => void pvExportTimesheet());
+  pvById("entity-report").addEventListener("click", pvOpenReport);
+  pvById("form-report").addEventListener("submit", (event) => void pvDownloadReport(event));
+  pvById("entity-import").addEventListener("click", pvOpenImport);
+  pvById("import-file").addEventListener("change", () => void pvPreviewImport());
+  pvById("form-import").addEventListener("submit", (event) => void pvApplyImport(event));
+  pvById("entity-print-settings").addEventListener("click", () => void pvOpenPrintSettings());
+  pvById("form-print").addEventListener("submit", (event) => void pvSavePrintSettings(event));
+  pvById("record-print").addEventListener("click", () => void pvPrintWaybill());
+  pvById("card-download").addEventListener("click", () => void pvDownloadFuelCard());
+
   pvById("form-record").addEventListener("submit", (event) => void pvSubmit(event));
   pvById("record-delete").addEventListener("click", () => void pvDelete());
 
@@ -180,6 +193,9 @@ function pvShowEntity(entity) {
   pvById("entity-tile").dataset.sec = entity.section_id;
   pvById("entity-icon").setAttribute("href", `#${sectionIconId(entity.section_id)}`);
   pvById("entity-filter").value = "";
+  pvById("entity-print-settings").hidden = entity.kind !== "waybills";
+  pvById("entity-import").hidden = entity.kind !== "fuel";
+  pvById("entity-report").hidden = entity.kind !== "fuel";
   pvById("entity-table").querySelector("tbody").replaceChildren();
   pvById("entity-count").textContent = "";
   pvById("entity-empty").hidden = true;
@@ -381,6 +397,9 @@ async function pvOpenForm(record) {
   pvById("dlg-record-title").textContent = record ? `${entity.singular[0].toUpperCase()}${entity.singular.slice(1)}: ${record.label}` : entity.new_label;
   pvById("record-error").hidden = true;
   pvById("record-delete").hidden = !record;
+  pvById("record-print").hidden = !(record && entity.kind === "waybills");
+  pvById("record-card").hidden = !(record && entity.kind === "vehicles");
+  if (!pvById("card-month").value) pvById("card-month").value = PV_UTIL.currentMonth();
 
   const box = pvById("record-fields");
   box.replaceChildren(
@@ -655,6 +674,337 @@ async function pvSubmit(event) {
   }
 }
 
+/* ---------- fuel-card statement import ---------- */
+
+function pvOpenImport() {
+  pvById("import-file").value = "";
+  pvById("import-summary").hidden = true;
+  pvById("import-problems").hidden = true;
+  pvById("import-error").hidden = true;
+  pvById("import-apply").disabled = true;
+  pvById("dlg-import").showModal();
+}
+
+async function pvSendStatement(file, apply) {
+  const query = new URLSearchParams({ filename: file.name, apply: String(apply) });
+  const response = await fetch(`/api/primavtodor/fuel/import?${query}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: await file.arrayBuffer(),
+    cache: "no-store",
+  });
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    /* not JSON */
+  }
+  if (!response.ok) throw new ApiError(response.status, payload?.detail);
+  return payload;
+}
+
+function pvRenderImport(report) {
+  const counts = report.counts;
+  const summary = pvById("import-summary");
+  const parts = [`${report.period || "Выписка"}: операций ${counts.total}`];
+  if (report.applied) parts.push(`загружено ${counts.new}`);
+  else parts.push(`будет загружено ${counts.new} (${PV_UTIL.formatNumber(report.liters_new)} л)`);
+  parts.push(`уже были ${counts.duplicate}`);
+  if (counts.unmatched + counts.failed) parts.push(`не удалось привязать ${counts.unmatched + counts.failed}`);
+  summary.textContent = parts.join(" · ");
+  summary.hidden = false;
+
+  const problems = report.operations.filter((op) => op.status === "unmatched" || op.status === "failed");
+  const list = pvById("import-problems");
+  list.replaceChildren(
+    ...problems.map((op) => {
+      const item = document.createElement("li");
+      const when = `${PV_UTIL.formatDate(op.date)} ${op.time}`.trim();
+      item.textContent = `${when} · ${PV_UTIL.formatNumber(op.liters)} л · ${op.reason}`;
+      return item;
+    }),
+  );
+  list.hidden = problems.length === 0;
+}
+
+async function pvPreviewImport() {
+  const file = pvById("import-file").files[0];
+  const apply = pvById("import-apply");
+  apply.disabled = true;
+  pvById("import-error").hidden = true;
+  if (!file) return;
+  try {
+    const report = await pvSendStatement(file, false);
+    pvRenderImport(report);
+    apply.disabled = report.counts.new === 0;
+    apply.textContent = report.counts.new ? `Загрузить: ${report.counts.new}` : "Загрузить";
+  } catch (error) {
+    pvById("import-summary").hidden = true;
+    pvById("import-problems").hidden = true;
+    const slot = pvById("import-error");
+    slot.textContent = describeError(error);
+    slot.hidden = false;
+  }
+}
+
+async function pvApplyImport(event) {
+  event.preventDefault();
+  const file = pvById("import-file").files[0];
+  const button = pvById("import-apply");
+  if (!file) return;
+  button.disabled = true;
+  try {
+    const report = await pvSendStatement(file, true);
+    pvRenderImport(report);
+    toast(`Загружено заправок: ${report.counts.new}`);
+    await pvLoadEntity();
+  } catch (error) {
+    const slot = pvById("import-error");
+    slot.textContent = describeError(error);
+    slot.hidden = false;
+    button.disabled = false; // some fill-ups may already be loaded; a retry only adds the rest
+  }
+}
+
+/* ---------- timesheet form and production calendar ---------- */
+
+async function pvExportTimesheet() {
+  const button = pvById("ts-export");
+  button.disabled = true;
+  try {
+    const query = new URLSearchParams({ month: pv.month });
+    const name = await pvDownload(`/api/primavtodor/timesheet/form?${query}`);
+    toast(`Табель сохранён: ${name}`);
+  } catch (error) {
+    toast(`Не удалось сформировать табель: ${describeError(error)}`, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+const PV_MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+
+async function pvOpenCalendar() {
+  const error = pvById("cal-error");
+  error.hidden = true;
+  try {
+    const info = await api("GET", "/api/primavtodor/calendar");
+    const select = pvById("cal-year");
+    const wanted = Number.parseInt(pv.month?.slice(0, 4) ?? "", 10);
+    select.replaceChildren(...info.years.map((year) => new Option(String(year), String(year))));
+    select.value = String(info.years.includes(wanted) ? wanted : info.years[0]);
+    pvById("cal-legend").replaceChildren(
+      ...Object.entries(info.labels).map(([kind, label]) => {
+        const span = document.createElement("span");
+        const swatch = document.createElement("i");
+        swatch.className = `cal-day ${kind}`;
+        span.append(swatch, label);
+        return span;
+      }),
+    );
+    pvById("dlg-calendar").showModal();
+    await pvShowCalendarYear();
+  } catch (failure) {
+    toast(`Не удалось открыть календарь: ${describeError(failure)}`, "error");
+  }
+}
+
+async function pvShowCalendarYear() {
+  const year = pvById("cal-year").value;
+  const error = pvById("cal-error");
+  error.hidden = true;
+  try {
+    const view = await api("GET", `/api/primavtodor/calendar/${year}`);
+    pvById("cal-total").textContent = `${view.workdays} рабочих дней, ${view.hours} ч (40-часовая неделя)`;
+    pvById("cal-grid").replaceChildren(
+      ...view.months.map((month) => {
+        const box = document.createElement("section");
+        box.className = "cal-month";
+        const title = document.createElement("h3");
+        title.textContent = PV_MONTHS[month.month - 1];
+        const norm = document.createElement("small");
+        norm.textContent = `${month.norm.workdays} дн. · ${month.norm.hours} ч`;
+        const days = document.createElement("div");
+        days.className = "cal-days";
+        for (let i = 0; i < month.days[0].weekday; i += 1) days.append(document.createElement("span"));
+        for (const day of month.days) {
+          const cell = document.createElement("span");
+          cell.className = `cal-day ${day.kind}${day.holiday ? " holiday" : ""}${day.transferred ? " moved" : ""}`;
+          cell.textContent = String(day.day);
+          if (day.transferred) cell.title = "Выходной по переносу";
+          else if (day.holiday) cell.title = "Праздничный день";
+          else if (day.kind === "short") cell.title = "Сокращённый день";
+          days.append(cell);
+        }
+        box.append(title, norm, days);
+        return box;
+      }),
+    );
+  } catch (failure) {
+    error.textContent = describeError(failure);
+    error.hidden = false;
+  }
+}
+
+/* ---------- monthly fuel analysis ---------- */
+
+function pvOpenReport() {
+  if (!pvById("report-month").value) pvById("report-month").value = PV_UTIL.currentMonth();
+  pvById("report-error").hidden = true;
+  pvById("dlg-report").showModal();
+}
+
+async function pvDownloadReport(event) {
+  event.preventDefault();
+  const month = pvById("report-month").value;
+  const slot = pvById("report-error");
+  slot.hidden = true;
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    slot.textContent = "Выберите месяц";
+    slot.hidden = false;
+    return;
+  }
+  const button = pvById("report-download");
+  button.disabled = true;
+  try {
+    const name = await pvDownload(`/api/primavtodor/reports/fuel?${new URLSearchParams({ month })}`);
+    toast(`Отчёт сохранён: ${name}`);
+  } catch (error) {
+    slot.textContent = describeError(error);
+    slot.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/* ---------- printing ---------- */
+
+/** Download a generated file; failures come back as a readable message, not a saved error page. */
+async function pvDownload(path) {
+  const response = await fetch(path, { cache: "no-store" });
+  if (!response.ok) {
+    let detail = null;
+    try {
+      detail = (await response.json()).detail;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(response.status, detail);
+  }
+  const match = /filename\*=UTF-8''([^;]+)/i.exec(response.headers.get("Content-Disposition") ?? "");
+  let name = "файл.xlsx";
+  try {
+    if (match) name = decodeURIComponent(match[1]);
+  } catch {
+    /* keep the default name */
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const link = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return name;
+}
+
+async function pvPrintWaybill() {
+  const { record } = pv.editing ?? {};
+  if (!record) return;
+  const button = pvById("record-print");
+  button.disabled = true;
+  try {
+    const name = await pvDownload(`/api/primavtodor/waybills/${encodeURIComponent(record.id)}/print`);
+    toast(`Бланк сохранён: ${name}`);
+  } catch (error) {
+    pvShowFormError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function pvDownloadFuelCard() {
+  const { record } = pv.editing ?? {};
+  const month = pvById("card-month").value;
+  if (!record) return;
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    pvShowFormError(new Error("Выберите месяц"));
+    return;
+  }
+  const button = pvById("card-download");
+  button.disabled = true;
+  try {
+    const query = new URLSearchParams({ month });
+    const name = await pvDownload(`/api/primavtodor/vehicles/${encodeURIComponent(record.id)}/fuel-card?${query}`);
+    toast(`Карточка сохранена: ${name}`);
+  } catch (error) {
+    pvShowFormError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function pvOpenPrintSettings() {
+  let data;
+  try {
+    data = await api("GET", "/api/primavtodor/settings/print");
+  } catch (error) {
+    toast(`Не удалось открыть настройки: ${describeError(error)}`, "error");
+    return;
+  }
+  const box = pvById("print-fields");
+  const wrap = (id, caption, control) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "field";
+    const label = document.createElement("label");
+    label.htmlFor = id;
+    label.textContent = caption;
+    wrapper.append(label, control);
+    return wrapper;
+  };
+  const rows = data.fields.map((field) => {
+    const input = document.createElement(field.key === "org_header" ? "textarea" : "input");
+    input.id = `pf-${field.key}`;
+    input.name = field.key;
+    input.value = data.values[field.key] ?? "";
+    if (input.tagName === "TEXTAREA") input.rows = 3;
+    else input.type = "text";
+    const wrapper = wrap(input.id, field.label, input);
+    if (field.key === "org_header") wrapper.classList.add("span-2");
+    return wrapper;
+  });
+  const select = document.createElement("select");
+  select.id = "pf-control";
+  select.name = "control";
+  for (const option of data.control_options) {
+    select.append(new Option(option.label, option.value, false, option.value === data.values.control));
+  }
+  box.replaceChildren(...rows, wrap("pf-control", "Кто разрешает выезд", select));
+  pvById("print-error").hidden = true;
+  pvById("dlg-print").showModal();
+  box.querySelector("input, textarea")?.focus();
+}
+
+async function pvSavePrintSettings(event) {
+  event.preventDefault();
+  const button = pvById("print-save");
+  button.disabled = true;
+  try {
+    const body = {};
+    for (const input of pvById("print-fields").querySelectorAll("input, textarea, select")) {
+      body[input.name] = input.value;
+    }
+    await api("PUT", "/api/primavtodor/settings/print", { body });
+    pvById("dlg-print").close("saved");
+    toast("Данные для печати сохранены");
+  } catch (error) {
+    const slot = pvById("print-error");
+    slot.textContent = describeError(error);
+    slot.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function pvDelete() {
   const { entity, record } = pv.editing;
   const confirmed = await askConfirm({
@@ -710,7 +1060,16 @@ function pvCodeBadge(code) {
   return span;
 }
 
+function pvRenderNorm(norm) {
+  const text = norm.from_calendar
+    ? `Норма месяца по производственному календарю: ${norm.workdays} раб. дн., ${norm.hours} ч` +
+      (norm.short_days ? ` (сокращённых дней: ${norm.short_days})` : "")
+    : "Календаря на этот год в программе нет: выходными считаются суббота и воскресенье.";
+  pvById("ts-norm").textContent = text;
+}
+
 function pvRenderTimesheet(data) {
+  pvRenderNorm(data.norm);
   const legend = pvById("ts-legend");
   legend.replaceChildren(
     ...data.codes.map((item) => {
@@ -730,7 +1089,8 @@ function pvRenderTimesheet(data) {
   for (const day of data.days) {
     const th = document.createElement("th");
     th.scope = "col";
-    if (day.weekend) th.className = "weekend";
+    if (day.off) th.className = "weekend";
+    if (day.kind === "short") th.title = "Сокращённый день (на час короче)";
     th.append(String(day.day));
     const small = document.createElement("small");
     small.textContent = PV_WEEKDAYS[day.weekday];
@@ -762,7 +1122,7 @@ function pvRenderTimesheet(data) {
 
     row.cells.forEach((cell, index) => {
       const td = document.createElement("td");
-      if (data.days[index].weekend) td.className = "weekend";
+      if (data.days[index].off) td.className = "weekend";
       const button = document.createElement("button");
       button.type = "button";
       button.className = `ts-cell${cell.source === "manual" ? " manual" : ""}${cell.conflict ? " conflict" : ""}`;

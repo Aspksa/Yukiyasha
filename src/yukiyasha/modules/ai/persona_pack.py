@@ -7,7 +7,7 @@ message are shown to the model as a *tone* sample, and the model answers in its 
 
 import json
 import re
-from functools import lru_cache
+from functools import cache, lru_cache
 from importlib import resources
 
 MAX_EXAMPLES = 3
@@ -56,7 +56,7 @@ PROGRAM_RULES = (
     "Не сохраняй учётные секреты, не выдумывай факты и данные. Отвечай по-русски."
 )
 
-# Words (stems) that make a category fit the message. No match means no examples.
+# Word starts (regex fragments) that make a category fit the message. No match means no examples.
 KEYWORDS: dict[str, tuple[str, ...]] = {
     "greeting": ("привет", "здравств", "добрый день", "доброго дня", "хай"),
     "morning": ("доброе утро", "с утра", "утро", "проснул"),
@@ -70,13 +70,13 @@ KEYWORDS: dict[str, tuple[str, ...]] = {
     "anxiety": ("тревож", "волную", "страшно", "боюсь", "переживаю"),
     "fatigue": ("устал", "нет сил", "вымотал", "выгора"),
     "setback": ("не получилось", "ошибк", "провал", "не вышло", "сломал", "неудач"),
-    "success": ("получилось", "удалось", "ура", "победа", "справил", "готово"),
+    "success": ("получилось", "удалось", r"ура\b", "победа", "справил", "готово"),
     "work": ("задач", "проект", "помоги", "помощь", "сделай", "план", "срок"),
     "learning": ("учу", "учить", "объясни", "как работает", "изуча", "научи"),
-    "relationship": ("отношени", "друг", "близк", "семь"),
+    "relationship": ("отношени", r"друг(а|у|ом|е|и|ей)?\b", "близк", "семь"),
     "closeness": ("обним", "рядом", "прижм", "тепл"),
     "flirt": ("флирт", "заигр"),
-    "fox_body": ("хвост", "ушк", "ушки", "лис"),
+    "fox_body": ("хвост", "ушк", "ушки", r"лис(а|ы|е|у|ой|ья|ье|ьи|ий)\b"),
     "power": ("магия", "магии", "сила", "метель", "щит", "проклят"),
 }
 
@@ -105,12 +105,18 @@ def persona_text(assistant_name: str, program_rules: str = PROGRAM_RULES) -> str
     )
 
 
+@cache
+def _pattern(words: tuple[str, ...]) -> re.Pattern[str]:
+    """Words are regex fragments matched from the start of a word, so «лис» is not «список»."""
+    return re.compile(r"(?<!\w)(?:" + "|".join(words) + ")")
+
+
 def _categories_for(message: str) -> list[str]:
     text = message.lower()
     scored = [
-        (sum(text.count(word) for word in words), name)
+        (len(_pattern(words).findall(text)), name)
         for name, words in KEYWORDS.items()
-        if any(word in text for word in words)
+        if _pattern(words).search(text)
     ]
     scored.sort(key=lambda item: -item[0])
     return [name for _, name in scored]

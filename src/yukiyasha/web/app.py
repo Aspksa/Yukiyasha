@@ -6,10 +6,10 @@ from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 from typing import Annotated, Any, TypeVar
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
@@ -44,11 +44,15 @@ from yukiyasha.modules.memory import (
 )
 from yukiyasha.modules.primavtodor import (
     PrimavtodorError,
+    PrintNotAvailableError,
     RecordInUseError,
     RecordNotFoundError,
     RecordValidationError,
+    StatementError,
     UnknownEntityError,
+    calendar_ru,
 )
+from yukiyasha.modules.primavtodor.settings import CONTROL_MODES, PRINT_FIELDS
 from yukiyasha.modules.proposals import (
     ProposalError,
     ProposalNotFoundError,
@@ -93,6 +97,7 @@ class TimesheetMarkRequest(BaseModel):
     code: str | None = None  # empty/None clears the manual mark
 
 
+XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 T = TypeVar("T")
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -128,6 +133,10 @@ def primavtodor_http_error(exc: PrimavtodorError | DiskError) -> HTTPException:
         return HTTPException(
             status_code=409, detail={"message": exc.message, "references": exc.references}
         )
+    if isinstance(exc, StatementError):
+        return HTTPException(status_code=422, detail={"message": str(exc)})
+    if isinstance(exc, PrintNotAvailableError):
+        return HTTPException(status_code=422, detail={"message": exc.message})
     if isinstance(exc, RecordNotFoundError):
         return HTTPException(status_code=404, detail="Record not found")
     if isinstance(exc, UnknownEntityError):
@@ -396,6 +405,73 @@ def create_app(
         """One switch for every fuel norm: summer or winter."""
         return primavtodor_call(lambda: runtime.primavtodor.data.apply_season(request.season))
 
+    @application.get("/api/primavtodor/calendar")
+    def primavtodor_calendar_years() -> dict[str, object]:
+        """Years of the production calendar that can be chosen."""
+        return {"years": list(calendar_ru.available_years()), "labels": calendar_ru.KIND_LABELS}
+
+    @application.get("/api/primavtodor/calendar/{year}")
+    def primavtodor_calendar(year: int) -> dict[str, object]:
+        view = calendar_ru.year_view(year)
+        if view is None:
+            raise HTTPException(
+                status_code=404, detail={"message": f"Календаря на {year} год нет в программе"}
+            )
+        return view
+
+    @application.get("/api/primavtodor/settings/print")
+    def primavtodor_print_settings() -> dict[str, object]:
+        """Organisation, signers and control wording printed on the waybill."""
+        return {
+            "values": primavtodor_call(runtime.primavtodor.settings.print_settings),
+            "fields": [{"key": k, "label": v} for k, v in PRINT_FIELDS],
+            "control_options": [{"value": k, "label": v} for k, v in CONTROL_MODES],
+        }
+
+    @application.put("/api/primavtodor/settings/print")
+    def primavtodor_set_print_settings(payload: dict[str, object]) -> dict[str, str]:
+        return primavtodor_call(lambda: runtime.primavtodor.settings.set_print_settings(payload))
+
+    @application.post("/api/primavtodor/fuel/import")
+    def primavtodor_import_fuel(
+        content: Annotated[bytes, Body(media_type="application/octet-stream")],
+        filename: str = Query(max_length=200),
+        apply: bool = Query(default=False),
+    ) -> dict[str, object]:
+        """Match a fuel-card statement to waybills; ``apply=true`` creates the fuel records."""
+        return primavtodor_call(
+            lambda: runtime.primavtodor.import_fuel_statement(content, filename, apply=apply)
+        )
+
+    @application.get("/api/primavtodor/vehicles/{vehicle_id}/fuel-card")
+    def primavtodor_fuel_card(vehicle_id: str, month: str = Query(max_length=7)) -> Response:
+        """Monthly fuel card of a vehicle as an .xlsx (a sheet per driver)."""
+        content, name = primavtodor_call(lambda: runtime.primavtodor.fuel_cards(vehicle_id, month))
+        return Response(
+            content=content,
+            media_type=XLSX_TYPE,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
+        )
+
+    @application.get("/api/primavtodor/reports/fuel")
+    def primavtodor_fuel_report(month: str = Query(max_length=7)) -> Response:
+        """Monthly «Анализ расхода ГСМ» for all vehicles as an .xlsx."""
+        content, name = primavtodor_call(lambda: runtime.primavtodor.fuel_report(month))
+        return Response(
+            content=content,
+            media_type=XLSX_TYPE,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
+        )
+
+    @application.get("/api/primavtodor/waybills/{waybill_id}/print")
+    def primavtodor_print_waybill(waybill_id: str) -> Response:
+        content, name = primavtodor_call(lambda: runtime.primavtodor.print_waybill(waybill_id))
+        return Response(
+            content=content,
+            media_type=XLSX_TYPE,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
+        )
+
     @application.get("/api/primavtodor/records/{kind}")
     def primavtodor_list(kind: str) -> dict[str, object]:
         return primavtodor_call(lambda: runtime.primavtodor.data.list_records(kind))
@@ -425,6 +501,16 @@ def create_app(
     def primavtodor_timesheet(month: str | None = Query(default=None)) -> dict[str, object]:
         wanted = month or date.today().strftime("%Y-%m")
         return primavtodor_call(lambda: runtime.primavtodor.timesheet.month_view(wanted))
+
+    @application.get("/api/primavtodor/timesheet/form")
+    def primavtodor_timesheet_form(month: str = Query(max_length=7)) -> Response:
+        """The month's timesheet filled into the form Т-12 as an .xlsx."""
+        content, name = primavtodor_call(lambda: runtime.primavtodor.timesheet_form(month))
+        return Response(
+            content=content,
+            media_type=XLSX_TYPE,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
+        )
 
     @application.put("/api/primavtodor/timesheet/mark")
     def primavtodor_timesheet_mark(request: TimesheetMarkRequest) -> dict[str, object]:

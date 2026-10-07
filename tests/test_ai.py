@@ -366,3 +366,35 @@ def test_no_examples_without_a_match_or_in_a_crisis(tmp_path: Path) -> None:
             assert "Примеры твоего тона" not in request["body"]["messages"][0]["content"]
     assert all("examples" not in m for chat in module.list_chats()
                for m in module.get_chat(chat["id"])["messages"])
+
+
+def test_keywords_match_word_starts_not_inner_substrings() -> None:
+    from yukiyasha.modules.ai.persona_pack import _categories_for
+
+    assert "fox_body" not in _categories_for("Сделай список путевых листов за октябрь")
+    assert "success" not in _categories_for("Опиши структуру и культуру проекта")
+    assert "fox_body" in _categories_for("У лисы пушистый хвост")
+
+
+def test_a_turn_dropped_before_streaming_returns_its_slot(tmp_path: Path) -> None:
+    import gc
+
+    with FakeProvider(chunks=["ok"]) as provider:
+        module = make_module(tmp_path, settings_for(provider))
+        for _ in range(4):  # more than MAX_CONCURRENT: a leaked slot would end in AiBusyError
+            module.begin_chat(None, "Вопрос")
+            gc.collect()
+        assert ask(module, "Вопрос")[-1]["type"] == "done"
+
+
+def test_two_turns_on_one_conversation_keep_both_exchanges(tmp_path: Path) -> None:
+    with FakeProvider(chunks=["ok"]) as provider:
+        module = make_module(tmp_path, settings_for(provider))
+        chat_id = ask(module, "первый")[0]["conversation_id"]
+        slow = module.begin_chat(chat_id, "второй")  # both read the same history ...
+        fast = module.begin_chat(chat_id, "третий")
+        list(fast.events())
+        list(slow.events())  # ... and the later save must not drop the earlier exchange
+
+    texts = [m["content"] for m in module.get_chat(chat_id)["messages"] if m["role"] == "user"]
+    assert texts == ["первый", "третий", "второй"]

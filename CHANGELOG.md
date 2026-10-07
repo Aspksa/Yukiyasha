@@ -2,6 +2,36 @@
 
 All notable changes to Yukiyasha are documented here.
 
+## [Unreleased]
+
+### Added
+- **Printable waybill** (form № 3, light vehicle): a *Печать* button in the waybill form
+  downloads the organisation's own blank, filled (both the waybill and its copy). New fields:
+  driver's licence number and class, vehicle garage number and waybill form kind, departure and
+  return times. Organisation, signers and the control wording are set in *Данные для печати*.
+  Other forms (№ 3 спец., № 4-П) are refused with a clear message until they are added.
+- **Fuel-card statement import** (ГСМ → *Загрузить выписку*): reads the provider's `.xls`/`.xlsx`,
+  matches every fill-up card -> driver -> that driver's waybill on the date, shows a preview with
+  the reason for everything it cannot match, and never loads the same fill-up twice.
+- **Monthly fuel card** (*Карточка расхода ГСМ*) from the vehicle form: a sheet per driver in the
+  organisation's own card, formulas stay live.
+- **Monthly «Анализ расхода ГСМ»** (ГСМ → *Анализ за месяц*): a row per vehicle, diesel and petrol
+  columns, totals, notes for open waybills and overruns above 10%.
+- **Production calendar of Russia for 2026 and 2027** (*Календарь* on the timesheet page; the year
+  is selectable): days off, holidays, transfers and shortened days from the open xmlcalendar.ru
+  data (government decrees), month norms in days and hours. The timesheet paints holidays and
+  transfers, marks a waybill on a day off as **РВ** and shows the month norm. Other years fall
+  back to plain weekends. Check the 2027 data against the final decree when it is published.
+- **Timesheet on your form Т-12** (*Табель Т-12 (.xlsx)*): marks and hours per employee, days off
+  painted from the calendar, the form's own totals stay live, more than 15 people repeat the
+  block. Print settings gained «Структурное подразделение».
+- Dependencies: `openpyxl` (filling the workbooks) and `xlrd` (reading `.xls` statements).
+- The assistant now speaks as **Юкияша** by default: a bundled character pack (persona, honesty
+  rules and 400 example replies in 20 categories). A few replies that fit the message are shown to
+  the model as a tone sample (never sent as-is, never repeated within the last 30 answers, none for
+  messages about real danger). A persona file still equal to the 0.3.0 default is upgraded on
+  start; an edited persona is left alone.
+
 ## [0.8.0] - 2026-10-07
 
 Documents found by Юкияша are now first-class visual objects in the conversation instead of raw

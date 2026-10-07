@@ -40,3 +40,11 @@ class RecordInUseError(PrimavtodorError):
         super().__init__(message)
         self.message = message
         self.references = references
+
+
+class PrintNotAvailableError(PrimavtodorError):
+    """Raised when a waybill cannot be printed (form not supported yet, broken template)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message

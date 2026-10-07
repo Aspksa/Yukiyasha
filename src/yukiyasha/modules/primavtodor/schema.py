@@ -30,6 +30,12 @@ FUEL_TYPES: tuple[tuple[str, str], ...] = (
     ("Газ", "Газ"),
 )
 
+WAYBILL_FORMS: tuple[tuple[str, str], ...] = (
+    ("car", "№ 3 — легковой автомобиль"),
+    ("special", "№ 3 спец. — спецавтомобиль"),
+    ("truck", "№ 4-П — грузовой автомобиль"),
+)
+
 SEASONS: tuple[tuple[str, str], ...] = (("summer", "Лето"), ("winter", "Зима"))
 
 KIND_EMPLOYEES = "employees"
@@ -133,6 +139,9 @@ EMPLOYEES = Entity(
         Field("is_driver", "Водитель", BOOL, default=True,
               help="Топливная карта и машина закрепляются только за водителями"),
         Field("personnel_number", "Табельный номер", TEXT, unique=True, max_len=30),
+        Field("license_number", "Водительское удостоверение №", TEXT, max_len=30,
+              help="Печатается в путевом листе"),
+        Field("license_class", "Класс (категории)", TEXT, max_len=20),
         Field("phone", "Телефон", TEXT, max_len=40),
         Field("fuel_card_number", "Номер топливной карты", TEXT, unique=True, max_len=40,
               help="Карта закреплена за водителем; по ней оформляются заправки"),
@@ -158,6 +167,9 @@ VEHICLES = Entity(
     fields=(
         Field("plate", "Госномер", TEXT, required=True, unique=True, max_len=15),
         Field("model", "Марка и модель", TEXT, required=True, max_len=80),
+        Field("garage_number", "Гаражный номер", TEXT, max_len=20),
+        Field("waybill_form", "Бланк путевого листа", CHOICE, default="car",
+              options=WAYBILL_FORMS, help="Печать готова для формы № 3 (легковой автомобиль)"),
         Field("fuel_type", "Вид топлива", CHOICE, default="ДТ", options=FUEL_TYPES),
         Field("norm_summer", "Норма расхода летом, л на 100 км", FLOAT, min=0, max=500),
         Field("norm_winter", "Норма расхода зимой, л на 100 км", FLOAT, min=0, max=500,
@@ -192,6 +204,8 @@ WAYBILLS = Entity(
         Field("season", "Сезон нормы", CHOICE, required=True, options=SEASONS,
               help="Норма берётся из машины на этот сезон; по умолчанию — текущий сезон"),
         Field("route", "Маршрут", TEXT, max_len=500, multiline=True),
+        Field("time_out", "Время выезда", TEXT, max_len=5, help="ЧЧ:ММ, например 08:30"),
+        Field("time_in", "Время возвращения", TEXT, max_len=5, help="ЧЧ:ММ"),
         Field("odometer_out", "Одометр при выезде, км", INT, required=True, min=0,
               max=10_000_000),
         Field("odometer_in", "Одометр при возврате, км", INT, min=0, max=10_000_000,
@@ -233,6 +247,7 @@ FUEL = Entity(
         Field("waybill_id", "Путевой лист", REF, required=True, ref=KIND_WAYBILLS,
               help="Водитель, машина и топливная карта берутся из путевого листа"),
         Field("date", "Дата", DATE, required=True),
+        Field("time", "Время", TEXT, max_len=8, help="ЧЧ:ММ; заполняется при загрузке выписки"),
         Field("liters", "Количество, л", FLOAT, required=True, min=0, max=5000),
         Field("price_per_liter", "Цена за литр, ₽", FLOAT, min=0, max=100_000),
         Field("fuel_type", "Вид топлива", CHOICE, options=FUEL_TYPES,

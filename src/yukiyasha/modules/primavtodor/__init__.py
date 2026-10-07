@@ -4,6 +4,7 @@ from yukiyasha.modules.primavtodor.access import PrimavtodorReadAccess
 from yukiyasha.modules.primavtodor.errors import (
     InvalidDocumentNameError,
     PrimavtodorError,
+    PrintNotAvailableError,
     RecordInUseError,
     RecordNotFoundError,
     RecordValidationError,
@@ -17,6 +18,7 @@ from yukiyasha.modules.primavtodor.sections import (
     SECTIONS_BY_ID,
     Section,
 )
+from yukiyasha.modules.primavtodor.statement import StatementError
 
 __all__ = [
     "PRIMAVTODOR_DIR",
@@ -26,11 +28,13 @@ __all__ = [
     "InvalidDocumentNameError",
     "PrimavtodorError",
     "PrimavtodorModule",
+    "PrintNotAvailableError",
     "PrimavtodorReadAccess",
     "RecordInUseError",
     "RecordNotFoundError",
     "RecordValidationError",
     "Section",
+    "StatementError",
     "UnknownEntityError",
     "UnknownSectionError",
 ]

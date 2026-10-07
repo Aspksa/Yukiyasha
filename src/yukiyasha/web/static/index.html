@@ -187,6 +187,18 @@
           </div>
           <div class="head-actions">
             <div class="season-slot"></div>
+            <button class="btn" id="entity-print-settings" type="button" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+              <span>Данные для печати</span>
+            </button>
+            <button class="btn" id="entity-report" type="button" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+              <span>Анализ за месяц</span>
+            </button>
+            <button class="btn" id="entity-import" type="button" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+              <span>Загрузить выписку</span>
+            </button>
             <button class="btn" id="entity-files" type="button">
               <svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>
               <span>Файлы раздела</span>
@@ -226,6 +238,14 @@
             </div>
           </div>
           <div class="head-actions">
+            <button class="btn" id="ts-calendar" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-sec-timesheet"/></svg>
+              <span>Календарь</span>
+            </button>
+            <button class="btn" id="ts-export" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+              <span>Табель Т-12 (.xlsx)</span>
+            </button>
             <button class="btn" id="ts-files" type="button">
               <svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>
               <span>Файлы раздела</span>
@@ -244,6 +264,7 @@
           <button class="icon-btn" id="ts-next" type="button" aria-label="Следующий месяц"><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button>
           <button class="btn" id="ts-today" type="button">Текущий месяц</button>
         </div>
+        <p class="ts-norm" id="ts-norm" aria-live="polite"></p>
         <div class="legend" id="ts-legend" aria-label="Обозначения"></div>
         <div class="table-wrap ts-wrap" id="ts-wrap">
           <table class="ts-table" id="ts-table"></table>
@@ -339,13 +360,82 @@
       <div class="warn-list" id="record-warnings" hidden></div>
       <div class="form-grid" id="record-fields"></div>
       <dl class="details" id="record-details" hidden></dl>
+      <div class="card-row" id="record-card" hidden>
+        <label for="card-month">Карточка расхода ГСМ за месяц</label>
+        <input type="month" id="card-month">
+        <button class="btn" type="button" id="card-download">
+          <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+          <span>Скачать (.xlsx)</span>
+        </button>
+      </div>
       <p class="dlg-error" id="record-error" role="alert" hidden></p>
       <div class="dlg-actions dlg-actions-split">
         <button class="btn btn-ghost-danger" type="button" id="record-delete" hidden>Удалить</button>
+        <button class="btn" type="button" id="record-print" hidden>
+          <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+          <span>Печать (.xlsx)</span>
+        </button>
         <span class="spacer"></span>
         <button class="btn" type="button" data-close>Отмена</button>
         <button class="btn btn-primary" type="submit" id="record-save">Сохранить</button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-print" class="dlg-wide" aria-labelledby="dlg-print-title">
+    <form method="dialog" id="form-print" novalidate>
+      <h2 id="dlg-print-title">Данные для печати путевого листа</h2>
+      <p class="dlg-note">Эти сведения подставляются в бланк. Пустое поле остаётся пустым в бланке.</p>
+      <div class="form-grid" id="print-fields"></div>
+      <p class="dlg-error" id="print-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>Отмена</button>
+        <button class="btn btn-primary" type="submit" id="print-save">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-import" class="dlg-wide" aria-labelledby="dlg-import-title">
+    <form method="dialog" id="form-import" novalidate>
+      <h2 id="dlg-import-title">Выписка по топливным картам</h2>
+      <p class="dlg-note">Файл .xls или .xlsx от поставщика. Каждая заправка привязывается к путевому листу водителя, за которым закреплена карта, на дату заправки. Повторная загрузка ничего не дублирует.</p>
+      <div class="field"><label for="import-file">Файл выписки</label><input type="file" id="import-file" accept=".xls,.xlsx"></div>
+      <p class="import-summary" id="import-summary" aria-live="polite" hidden></p>
+      <ul class="import-problems" id="import-problems" hidden></ul>
+      <p class="dlg-error" id="import-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>Закрыть</button>
+        <button class="btn btn-primary" type="submit" id="import-apply" disabled>Загрузить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-report" aria-labelledby="dlg-report-title">
+    <form method="dialog" id="form-report" novalidate>
+      <h2 id="dlg-report-title">Анализ расхода ГСМ</h2>
+      <p class="dlg-note">Таблица по всем машинам за месяц: пробег, остатки, заправка, расход по факту и по норме. ФИО подписантов задаются в «Данные для печати» на странице путевых листов.</p>
+      <div class="field"><label for="report-month">Месяц</label><input type="month" id="report-month"></div>
+      <p class="dlg-error" id="report-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>Закрыть</button>
+        <button class="btn btn-primary" type="submit" id="report-download">Скачать (.xlsx)</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-calendar" class="dlg-wide" aria-labelledby="dlg-calendar-title">
+    <form method="dialog" id="form-calendar">
+      <h2 id="dlg-calendar-title">Производственный календарь</h2>
+      <div class="cal-bar">
+        <label for="cal-year">Год</label>
+        <select id="cal-year"></select>
+        <span class="cal-total" id="cal-total"></span>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div class="cal-legend" id="cal-legend"></div>
+      <p class="dlg-note">Данные по постановлениям Правительства о переносе выходных дней (открытые данные xmlcalendar.ru). Табель использует этот календарь: праздники и переносы закрашены, работа в выходной помечается «РВ».</p>
+      <p class="dlg-error" id="cal-error" role="alert" hidden></p>
+      <div class="dlg-actions"><button class="btn" type="button" data-close>Закрыть</button></div>
     </form>
   </dialog>
 

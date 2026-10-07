@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#080a10">
+  <title>Yukiyasha</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="sigil" aria-hidden="true">雪</div>
+        <div>
+          <strong>Yukiyasha</strong>
+          <span>Core · Web</span>
+        </div>
+      </div>
+      <div class="status" id="status"><i></i><span>Подключение…</span></div>
+    </header>
+
+    <section class="hero">
+      <p class="eyebrow">YUKIYASHA FOUNDATION</p>
+      <h1>Новое ядро.<br><em>Чистая архитектура.</em></h1>
+      <p class="lead">
+        Базовая веб-среда Yukiyasha уже отделена от ядра и готова
+        к развитию памяти, агентов, модулей и автоматизации.
+      </p>
+      <div class="actions">
+        <button id="inspect" type="button">Проверить ядро</button>
+        <a href="/docs">API Docs</a>
+      </div>
+    </section>
+
+    <section class="grid" aria-label="Состояние Yukiyasha">
+      <article class="card">
+        <span>Runtime</span>
+        <strong id="runtime-state">—</strong>
+        <p>Состояние главного процесса.</p>
+      </article>
+      <article class="card">
+        <span>Version</span>
+        <strong id="version">—</strong>
+        <p>Единая версия фундамента.</p>
+      </article>
+      <article class="card">
+        <span>Environment</span>
+        <strong id="environment">—</strong>
+        <p>Активная среда выполнения.</p>
+      </article>
+    </section>
+
+    <section class="console">
+      <div class="console-head">
+        <span>CORE TELEMETRY</span>
+        <button id="refresh" type="button" aria-label="Обновить">↻</button>
+      </div>
+      <pre id="telemetry">Инициализация…</pre>
+    </section>
+  </main>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

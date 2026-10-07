@@ -1,0 +1,182 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #f4f6fb;
+  background: #080a10;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 75% 8%, rgba(126, 106, 255, .16), transparent 30rem),
+    radial-gradient(circle at 15% 55%, rgba(59, 207, 180, .09), transparent 27rem),
+    #080a10;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom, #000, transparent 85%);
+}
+
+button, a { font: inherit; }
+
+.shell {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 28px 0 64px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0 56px;
+}
+
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand strong { display: block; letter-spacing: .02em; }
+.brand span { display: block; color: #777f91; font-size: 12px; margin-top: 2px; }
+
+.sigil {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 13px;
+  background: rgba(255,255,255,.045);
+  box-shadow: inset 0 1px rgba(255,255,255,.05);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9aa2b3;
+  font-size: 13px;
+}
+
+.status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: #b9914b;
+  box-shadow: 0 0 14px currentColor;
+}
+
+.status.online i { background: #50d6a7; }
+
+.hero { max-width: 810px; padding: 42px 0 72px; }
+.eyebrow {
+  margin: 0 0 18px;
+  color: #9186ff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .18em;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(48px, 8vw, 92px);
+  line-height: .95;
+  letter-spacing: -.055em;
+  font-weight: 680;
+}
+
+h1 em {
+  color: #888fa1;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.lead {
+  max-width: 650px;
+  margin: 28px 0 0;
+  color: #959cad;
+  font-size: clamp(16px, 2vw, 20px);
+  line-height: 1.65;
+}
+
+.actions { display: flex; gap: 12px; margin-top: 34px; }
+.actions button, .actions a {
+  border-radius: 12px;
+  padding: 12px 18px;
+  border: 1px solid rgba(255,255,255,.11);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.actions button {
+  border: 0;
+  color: #0a0b0f;
+  background: #f2f4f8;
+  font-weight: 750;
+}
+
+.actions a { color: #d9dde7; background: rgba(255,255,255,.03); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.card, .console {
+  border: 1px solid rgba(255,255,255,.085);
+  background: rgba(14,17,25,.78);
+  box-shadow: inset 0 1px rgba(255,255,255,.025);
+  backdrop-filter: blur(18px);
+}
+
+.card { border-radius: 18px; padding: 22px; }
+.card span, .console-head span {
+  color: #71798b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.card strong { display: block; margin-top: 14px; font-size: 25px; }
+.card p { margin: 9px 0 0; color: #707789; font-size: 13px; line-height: 1.55; }
+
+.console { margin-top: 14px; border-radius: 18px; overflow: hidden; }
+.console-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.console-head button {
+  color: #8d95a7;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 18px;
+}
+pre {
+  min-height: 130px;
+  margin: 0;
+  padding: 20px;
+  color: #a6e3ca;
+  overflow: auto;
+  font: 13px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media (max-width: 760px) {
+  .shell { width: min(100% - 28px, 1180px); }
+  .topbar { padding-bottom: 24px; }
+  .hero { padding: 28px 0 48px; }
+  .grid { grid-template-columns: 1fr; }
+  .status span { display: none; }
+}

@@ -17,6 +17,7 @@ from yukiyasha.modules.primavtodor.sections import (
     SECTIONS_BY_ID,
     Section,
 )
+from yukiyasha.modules.primavtodor.statement import StatementError
 
 __all__ = [
     "PRIMAVTODOR_DIR",
@@ -31,6 +32,7 @@ __all__ = [
     "RecordNotFoundError",
     "RecordValidationError",
     "Section",
+    "StatementError",
     "UnknownEntityError",
     "UnknownSectionError",
 ]

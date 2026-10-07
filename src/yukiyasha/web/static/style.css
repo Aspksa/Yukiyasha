@@ -805,3 +805,11 @@ dialog input[type="text"] {
   .editor-foot .hint { display: none; }
   .toasts { left: 18px; right: 18px; max-width: none; }
 }
+
+/* fuel-card statement import */
+.import-summary { margin: 14px 0 6px; font-weight: 600; }
+.import-problems {
+  margin: 6px 0 0; padding: 10px 14px 10px 28px; max-height: 220px; overflow: auto;
+  border: 1px solid var(--line-strong); border-radius: 10px; font-size: 13px; color: var(--muted);
+}
+.import-problems li + li { margin-top: 4px; }

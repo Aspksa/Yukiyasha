@@ -15,6 +15,7 @@ from yukiyasha.modules.primavtodor.errors import (
     PrintNotAvailableError,
     UnknownSectionError,
 )
+from yukiyasha.modules.primavtodor.fuel_import import import_statement
 from yukiyasha.modules.primavtodor.printing import WaybillForm3, fill_form3
 from yukiyasha.modules.primavtodor.records import Records
 from yukiyasha.modules.primavtodor.schema import (
@@ -225,3 +226,11 @@ class PrimavtodorModule:
         )
         number = re.sub(r'[\\/:*?"<>|\s]+', "-", data.number).strip("-") or waybill_id
         return fill_form3(data), f"Путевой лист № {number}.xlsx"
+
+    # ----- fuel-card statement -----
+
+    def import_fuel_statement(
+        self, content: bytes, filename: str, *, apply: bool
+    ) -> dict[str, object]:
+        """Preview (``apply=False``) or load the provider's statement into the fuel section."""
+        return import_statement(self.data, content, filename, apply=apply)

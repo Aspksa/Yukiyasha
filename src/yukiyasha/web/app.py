@@ -42,6 +42,7 @@ from yukiyasha.modules.primavtodor import (
     RecordInUseError,
     RecordNotFoundError,
     RecordValidationError,
+    StatementError,
     UnknownEntityError,
 )
 from yukiyasha.modules.primavtodor.settings import CONTROL_MODES, PRINT_FIELDS
@@ -115,6 +116,8 @@ def primavtodor_http_error(exc: PrimavtodorError | DiskError) -> HTTPException:
         return HTTPException(
             status_code=409, detail={"message": exc.message, "references": exc.references}
         )
+    if isinstance(exc, StatementError):
+        return HTTPException(status_code=422, detail={"message": str(exc)})
     if isinstance(exc, PrintNotAvailableError):
         return HTTPException(status_code=422, detail={"message": exc.message})
     if isinstance(exc, RecordNotFoundError):
@@ -316,6 +319,17 @@ def create_app(
     @application.put("/api/primavtodor/settings/print")
     def primavtodor_set_print_settings(payload: dict[str, object]) -> dict[str, str]:
         return primavtodor_call(lambda: runtime.primavtodor.settings.set_print_settings(payload))
+
+    @application.post("/api/primavtodor/fuel/import")
+    def primavtodor_import_fuel(
+        content: Annotated[bytes, Body(media_type="application/octet-stream")],
+        filename: str = Query(max_length=200),
+        apply: bool = Query(default=False),
+    ) -> dict[str, object]:
+        """Match a fuel-card statement to waybills; ``apply=true`` creates the fuel records."""
+        return primavtodor_call(
+            lambda: runtime.primavtodor.import_fuel_statement(content, filename, apply=apply)
+        )
 
     @application.get("/api/primavtodor/waybills/{waybill_id}/print")
     def primavtodor_print_waybill(waybill_id: str) -> Response:

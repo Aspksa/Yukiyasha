@@ -247,6 +247,7 @@ FUEL = Entity(
         Field("waybill_id", "Путевой лист", REF, required=True, ref=KIND_WAYBILLS,
               help="Водитель, машина и топливная карта берутся из путевого листа"),
         Field("date", "Дата", DATE, required=True),
+        Field("time", "Время", TEXT, max_len=8, help="ЧЧ:ММ; заполняется при загрузке выписки"),
         Field("liters", "Количество, л", FLOAT, required=True, min=0, max=5000),
         Field("price_per_liter", "Цена за литр, ₽", FLOAT, min=0, max=100_000),
         Field("fuel_type", "Вид топлива", CHOICE, options=FUEL_TYPES,

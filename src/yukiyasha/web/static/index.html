@@ -191,6 +191,10 @@
               <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
               <span>Данные для печати</span>
             </button>
+            <button class="btn" id="entity-import" type="button" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+              <span>Загрузить выписку</span>
+            </button>
             <button class="btn" id="entity-files" type="button">
               <svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>
               <span>Файлы раздела</span>
@@ -366,6 +370,21 @@
       <div class="dlg-actions">
         <button class="btn" type="button" data-close>Отмена</button>
         <button class="btn btn-primary" type="submit" id="print-save">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-import" class="dlg-wide" aria-labelledby="dlg-import-title">
+    <form method="dialog" id="form-import" novalidate>
+      <h2 id="dlg-import-title">Выписка по топливным картам</h2>
+      <p class="dlg-note">Файл .xls или .xlsx от поставщика. Каждая заправка привязывается к путевому листу водителя, за которым закреплена карта, на дату заправки. Повторная загрузка ничего не дублирует.</p>
+      <div class="field"><label for="import-file">Файл выписки</label><input type="file" id="import-file" accept=".xls,.xlsx"></div>
+      <p class="import-summary" id="import-summary" aria-live="polite" hidden></p>
+      <ul class="import-problems" id="import-problems" hidden></ul>
+      <p class="dlg-error" id="import-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>Закрыть</button>
+        <button class="btn btn-primary" type="submit" id="import-apply" disabled>Загрузить</button>
       </div>
     </form>
   </dialog>

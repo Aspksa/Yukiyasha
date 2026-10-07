@@ -156,6 +156,9 @@ function pvWire() {
   pvById("entity-new").addEventListener("click", () => void pvOpenForm(null));
   pvById("entity-filter").addEventListener("input", pvRenderEntity);
 
+  pvById("entity-import").addEventListener("click", pvOpenImport);
+  pvById("import-file").addEventListener("change", () => void pvPreviewImport());
+  pvById("form-import").addEventListener("submit", (event) => void pvApplyImport(event));
   pvById("entity-print-settings").addEventListener("click", () => void pvOpenPrintSettings());
   pvById("form-print").addEventListener("submit", (event) => void pvSavePrintSettings(event));
   pvById("record-print").addEventListener("click", () => void pvPrintWaybill());
@@ -185,6 +188,7 @@ function pvShowEntity(entity) {
   pvById("entity-icon").setAttribute("href", `#${sectionIconId(entity.section_id)}`);
   pvById("entity-filter").value = "";
   pvById("entity-print-settings").hidden = entity.kind !== "waybills";
+  pvById("entity-import").hidden = entity.kind !== "fuel";
   pvById("entity-table").querySelector("tbody").replaceChildren();
   pvById("entity-count").textContent = "";
   pvById("entity-empty").hidden = true;
@@ -658,6 +662,97 @@ async function pvSubmit(event) {
     pvShowFormError(error);
   } finally {
     button.disabled = false;
+  }
+}
+
+/* ---------- fuel-card statement import ---------- */
+
+function pvOpenImport() {
+  pvById("import-file").value = "";
+  pvById("import-summary").hidden = true;
+  pvById("import-problems").hidden = true;
+  pvById("import-error").hidden = true;
+  pvById("import-apply").disabled = true;
+  pvById("dlg-import").showModal();
+}
+
+async function pvSendStatement(file, apply) {
+  const query = new URLSearchParams({ filename: file.name, apply: String(apply) });
+  const response = await fetch(`/api/primavtodor/fuel/import?${query}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: await file.arrayBuffer(),
+    cache: "no-store",
+  });
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    /* not JSON */
+  }
+  if (!response.ok) throw new ApiError(response.status, payload?.detail);
+  return payload;
+}
+
+function pvRenderImport(report) {
+  const counts = report.counts;
+  const summary = pvById("import-summary");
+  const parts = [`${report.period || "Выписка"}: операций ${counts.total}`];
+  if (report.applied) parts.push(`загружено ${counts.new}`);
+  else parts.push(`будет загружено ${counts.new} (${PV_UTIL.formatNumber(report.liters_new)} л)`);
+  parts.push(`уже были ${counts.duplicate}`);
+  if (counts.unmatched + counts.failed) parts.push(`не удалось привязать ${counts.unmatched + counts.failed}`);
+  summary.textContent = parts.join(" · ");
+  summary.hidden = false;
+
+  const problems = report.operations.filter((op) => op.status === "unmatched" || op.status === "failed");
+  const list = pvById("import-problems");
+  list.replaceChildren(
+    ...problems.map((op) => {
+      const item = document.createElement("li");
+      const when = `${PV_UTIL.formatDate(op.date)} ${op.time}`.trim();
+      item.textContent = `${when} · ${PV_UTIL.formatNumber(op.liters)} л · ${op.reason}`;
+      return item;
+    }),
+  );
+  list.hidden = problems.length === 0;
+}
+
+async function pvPreviewImport() {
+  const file = pvById("import-file").files[0];
+  const apply = pvById("import-apply");
+  apply.disabled = true;
+  pvById("import-error").hidden = true;
+  if (!file) return;
+  try {
+    const report = await pvSendStatement(file, false);
+    pvRenderImport(report);
+    apply.disabled = report.counts.new === 0;
+    apply.textContent = report.counts.new ? `Загрузить: ${report.counts.new}` : "Загрузить";
+  } catch (error) {
+    pvById("import-summary").hidden = true;
+    pvById("import-problems").hidden = true;
+    const slot = pvById("import-error");
+    slot.textContent = describeError(error);
+    slot.hidden = false;
+  }
+}
+
+async function pvApplyImport(event) {
+  event.preventDefault();
+  const file = pvById("import-file").files[0];
+  const button = pvById("import-apply");
+  if (!file) return;
+  button.disabled = true;
+  try {
+    const report = await pvSendStatement(file, true);
+    pvRenderImport(report);
+    toast(`Загружено заправок: ${report.counts.new}`);
+    await pvLoadEntity();
+  } catch (error) {
+    const slot = pvById("import-error");
+    slot.textContent = describeError(error);
+    slot.hidden = false;
   }
 }
 

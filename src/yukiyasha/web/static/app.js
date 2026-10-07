@@ -2,6 +2,18 @@
 
 /* Yukiyasha workspace UI. All user-controlled strings are rendered through textContent. */
 
+const {
+  plural,
+  formatSize,
+  byteLength,
+  parentOf,
+  baseName,
+  joinPath,
+  sectionFor,
+  routeToHash,
+  parseHash,
+} = window.YukiUtil;
+
 const MAX_TEXT_BYTES = 1_048_576;
 const PROTECTED_PATHS = new Set(["projects", "projects/work", "projects/home"]);
 const SECTIONS = {
@@ -46,6 +58,7 @@ const els = {
   dlgNew: $("#dlg-new"),
   formNew: $("#form-new"),
   newPath: $("#new-path"),
+  newSubmit: $("#new-submit"),
   newNote: $("#dlg-new-note"),
   newError: $("#dlg-new-error"),
   dlgConfirm: $("#dlg-confirm"),
@@ -145,45 +158,13 @@ function isAbort(error) {
   return error?.name === "AbortError";
 }
 
-function plural(n, one, few, many) {
-  const m10 = n % 10;
-  const m100 = n % 100;
-  if (m10 === 1 && m100 !== 11) return one;
-  if (m10 >= 2 && m10 <= 4 && !(m100 >= 12 && m100 <= 14)) return few;
-  return many;
-}
 
-const numberFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
 
-function formatSize(bytes) {
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 * 1024) return `${numberFormat.format(bytes / 1024)} КБ`;
-  return `${numberFormat.format(bytes / (1024 * 1024))} МБ`;
-}
 
-function byteLength(text) {
-  return new TextEncoder().encode(text).length;
-}
 
-function parentOf(path) {
-  return path.split("/").slice(0, -1).join("/");
-}
 
-function baseName(path) {
-  return path.split("/").pop() ?? path;
-}
 
-function joinPath(dir, name) {
-  const clean = name.trim().replace(/^(\.?\/)+/, "");
-  return dir ? `${dir}/${clean}` : clean;
-}
 
-function sectionFor(path) {
-  for (const key of ["projects/work", "projects/home"]) {
-    if (path === key || path.startsWith(`${key}/`)) return key;
-  }
-  return "";
-}
 
 function icon(id, className = "icon") {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -210,6 +191,7 @@ function isDirty() {
 /* ---------- confirm dialog ---------- */
 
 function askConfirm({ title, text, okLabel, danger = true }) {
+  if (els.dlgConfirm.open) return Promise.resolve(false); // never stack two modals
   return new Promise((resolve) => {
     els.confirmTitle.textContent = title;
     els.confirmText.textContent = text;
@@ -232,20 +214,7 @@ document.querySelectorAll("dialog [data-close]").forEach((button) => {
 
 /* ---------- routing ---------- */
 
-function routeToHash(route) {
-  if (route.system) return "#system";
-  if (route.file) return `#f=${encodeURIComponent(route.file)}`;
-  return `#d=${encodeURIComponent(route.dir ?? "")}`;
-}
 
-function parseHash(hash) {
-  const raw = hash.replace(/^#/, "");
-  if (raw === "system") return { system: true };
-  const params = new URLSearchParams(raw);
-  if (params.has("f")) return { file: params.get("f") };
-  if (params.has("d")) return { dir: params.get("d") };
-  return { dir: "projects/work" };
-}
 
 function navigate(route) {
   const hash = routeToHash(route);
@@ -258,7 +227,8 @@ function navigate(route) {
 
 async function applyRoute(route) {
   const sameFile = route.file && state.file && route.file === state.file.path;
-  if (isDirty() && !sameFile) {
+  // Opening the system page keeps the editor (and its text) alive, so nothing is lost yet.
+  if (isDirty() && !sameFile && !route.system) {
     const discard = await askConfirm({
       title: "Есть несохранённые изменения",
       text: `Изменения в «${baseName(state.file.path)}» будут потеряны.`,
@@ -279,7 +249,11 @@ async function applyRoute(route) {
   }
 
   showView("files");
-  if (sameFile) return;
+  if (sameFile) {
+    updateNav(sectionFor(state.dir));
+    renderCrumbs();
+    return;
+  }
 
   const dir = route.file ? parentOf(route.file) : route.dir;
   const dirChanged = dir !== state.dir || !state.entries.length;
@@ -393,7 +367,6 @@ function showListMessage(title, text, actionLabel, action) {
   strong.textContent = title;
   const p = document.createElement("p");
   p.textContent = text;
-  p.style.margin = "0";
   els.listEmpty.append(strong, p);
   if (actionLabel) {
     const button = document.createElement("button");
@@ -637,6 +610,7 @@ els.formNew.addEventListener("submit", async (event) => {
   }
   const path = joinPath(state.dir, name);
 
+  els.newSubmit.disabled = true;
   try {
     await api("PUT", "/api/disk/file", { body: { path, content: "", overwrite: false } });
     els.dlgNew.close("created");
@@ -645,6 +619,8 @@ els.formNew.addEventListener("submit", async (event) => {
   } catch (error) {
     els.newError.textContent = describeError(error);
     els.newError.hidden = false;
+  } finally {
+    els.newSubmit.disabled = false;
   }
 });
 

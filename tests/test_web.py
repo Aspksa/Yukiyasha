@@ -14,7 +14,7 @@ from yukiyasha.web.middleware import RequestBodyLimitMiddleware
 @pytest.fixture
 def client(tmp_path: Path):
     app = create_app(Settings(disk_dir=tmp_path / "disk"))
-    with TestClient(app) as test_client:
+    with TestClient(app, base_url="http://127.0.0.1:8000") as test_client:
         yield test_client
 
 
@@ -260,6 +260,8 @@ def test_workspace_ui_markup_contract(client: TestClient) -> None:
     script = client.get("/static/app.js").text
 
     assert client.get("/static/style.css").status_code == 200
+    assert client.get("/static/util.js").status_code == 200
+    assert 'src="/static/util.js"' in html
     for element_id in (
         "entries",
         "editor-text",
@@ -281,3 +283,80 @@ def test_workspace_ui_uses_only_existing_api_routes(client: TestClient) -> None:
     for endpoint in ("/api/disk", "/api/disk/file", "/api/runtime", "/api/modules"):
         assert endpoint in routes
         assert f'"{endpoint}"' in script
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://evil.example",
+        "null",
+        "http://127.0.0.1.evil.example",
+        "http://127.0.0.1:9999",  # another local app on a different port
+        "https://127.0.0.1:8000",  # different scheme
+    ],
+)
+def test_disk_api_rejects_foreign_origin(client: TestClient, origin: str) -> None:
+    response = client.put(
+        "/api/disk/file",
+        json={"path": "x.txt", "content": "x"},
+        headers={"Origin": origin},
+    )
+
+    assert response.status_code == 403
+    assert client.get("/api/disk", params={"path": ""}).json()["entries"][0]["name"] == "projects"
+
+
+def test_disk_api_accepts_same_origin(client: TestClient) -> None:
+    response = client.put(
+        "/api/disk/file",
+        json={"path": "x.txt", "content": "x"},
+        headers={"Origin": "http://127.0.0.1:8000"},
+    )
+
+    assert response.status_code == 200
+
+
+def test_unknown_host_header_is_rejected(client: TestClient) -> None:
+    assert client.get("/api/health", headers={"Host": "evil.example"}).status_code == 400
+    assert client.get("/api/health", headers={"Host": "testserver"}).status_code == 400
+
+
+def test_security_headers_and_cache_rules(client: TestClient) -> None:
+    page = client.get("/")
+    api = client.get("/api/runtime")
+    docs = client.get("/docs")
+
+    assert page.headers["x-content-type-options"] == "nosniff"
+    assert page.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
+    assert "script-src 'self'" in page.headers["content-security-policy"]
+    assert page.headers["cache-control"] == "no-cache"
+    assert api.headers["cache-control"] == "no-store"
+    assert "content-security-policy" not in docs.headers  # Swagger UI needs its CDN assets
+
+
+def test_ui_has_no_inline_scripts_or_styles(client: TestClient) -> None:
+    """The CSP forbids inline code, so the page must not depend on it."""
+    html = client.get("/").text
+
+    assert " style=" not in html
+    assert "<style" not in html
+    assert "onclick=" not in html
+    assert "<script>" not in html
+
+
+def test_disk_not_ready_maps_to_503() -> None:
+    from yukiyasha.modules.disk import DiskNotReadyError
+    from yukiyasha.web.app import disk_http_error
+
+    error = disk_http_error(DiskNotReadyError("Yukiyasha Disk is not ready: stopped"))
+
+    assert error.status_code == 503
+
+
+def test_reserved_temp_name_is_rejected_over_http(client: TestClient) -> None:
+    response = client.put(
+        "/api/disk/file", json={"path": ".yukiyasha-ab12cd34", "content": "x"}
+    )
+
+    assert response.status_code == 400

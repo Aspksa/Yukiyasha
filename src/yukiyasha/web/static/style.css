@@ -74,6 +74,7 @@ body {
 }
 
 button, input, textarea { font: inherit; color: inherit; }
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 button { cursor: pointer; }
 [hidden] { display: none !important; }
 
@@ -313,6 +314,7 @@ h1 { margin: 0; font-size: clamp(24px, 3vw, 30px); letter-spacing: -.02em; line-
 .entries:empty { display: none; }
 .empty { flex: 1; display: grid; place-content: center; justify-items: center; padding: 36px 20px; text-align: center; color: var(--muted); }
 .empty strong { display: block; color: var(--text); margin-bottom: 4px; }
+.empty p { margin: 0; }
 .empty .btn { margin-top: 14px; }
 
 .skeleton { display: grid; gap: 8px; padding: 12px; }

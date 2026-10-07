@@ -1,5 +1,6 @@
 """Core Yukiyasha runtime."""
 
+import logging
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -7,6 +8,8 @@ from enum import StrEnum
 from yukiyasha.config import Settings
 from yukiyasha.modules import ModuleRegistry
 from yukiyasha.modules.disk import DiskModule
+
+logger = logging.getLogger("yukiyasha.runtime")
 
 
 class RuntimeState(StrEnum):
@@ -51,6 +54,8 @@ class YukiyashaRuntime:
         try:
             self.modules.start_all()
         except Exception:
+            # Keep serving (health/modules report the failure) but never hide the cause.
+            logger.exception("Module startup failed; runtime is degraded")
             self._state = RuntimeState.DEGRADED
             return
         self._state = RuntimeState.READY
@@ -59,6 +64,7 @@ class YukiyashaRuntime:
         try:
             self.modules.stop_all()
         except Exception:
+            logger.exception("Module shutdown failed")
             self._state = RuntimeState.DEGRADED
             raise
         self._state = RuntimeState.STOPPED

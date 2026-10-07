@@ -4,7 +4,34 @@ All notable changes to Yukiyasha are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- `pip install .` / wheel build failed with a duplicate-file error (redundant hatch
+  `force-include` of the static UI); CI now builds the wheel and checks the packaged UI;
+- a user file named like `.yukiyasha-<anything>` was hidden and silently deleted at startup;
+  only the exact internal temp-file shape (`.yukiyasha-` + 8 characters) is treated as internal,
+  and such names are rejected for user files;
+- built-in project directories are protected by file identity, so a differently spelled path
+  (case-insensitive filesystems) can no longer delete them;
+- NTFS junctions are no longer followed out of the disk root (resolved path is checked);
+- overwriting a file keeps its permission bits;
+- `DiskNotReadyError` and directory conflicts map to consistent HTTP statuses (503/409)
+  through one shared mapper instead of four copies of the same `except` chain;
+- module ids must be ASCII;
+- runtime start/stop failures are logged instead of being swallowed silently;
+- UI: visiting the system page no longer asks to discard unsaved text; returning to the same
+  file keeps the sidebar highlight; two confirm dialogs can no longer be stacked; the
+  "create file" button is locked while the request is running.
+
+### Security
+- browser Origin must match the request's own scheme and host:port (other local apps on
+  different ports are rejected, not only other sites);
+- the `testserver` host is no longer accepted in production (`extra_allowed_hosts` for tests);
+- security headers on every response: `Content-Security-Policy` (no inline code, no framing),
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`;
+- API responses are `Cache-Control: no-store`, UI files are `no-cache` (always revalidated).
+
 ### Added
+- `util.js` with the UI's pure helpers and `node --test` unit tests, run in Fast CI;
 - browser workspace: sidebar navigation (work, home, whole disk, system), breadcrumbs,
   folder navigation, name filter, text editor with save (Ctrl+S), file creation with
   automatic sub-folders and deletion with confirmation;

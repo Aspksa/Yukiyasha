@@ -88,6 +88,7 @@ permission controls are not exposed yet.
 ```bash
 ruff check .
 pytest
+node --test tests/js/util.test.js   # UI helpers, needs Node 20+
 ```
 
 ## Project structure

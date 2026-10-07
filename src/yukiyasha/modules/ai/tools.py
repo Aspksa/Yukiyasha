@@ -125,6 +125,10 @@ class AiToolRegistry:
             return self._denied(name, {"reason": "no_explicit_remember"})
         if name == "memory_forget" and not FORGET_TRIGGER.search(user_message):
             return self._denied(name, {"reason": "no_explicit_forget"})
+        if name == "primavtodor_propose_change" and not (
+            BUSINESS_TRIGGER.search(user_message) and MUTATION_TRIGGER.search(user_message)
+        ):
+            return self._denied(name, {"reason": "no_mutation_intent"})
 
         metadata = self._audit_metadata(name, arguments)
         try:

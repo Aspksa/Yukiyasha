@@ -18,7 +18,9 @@ from yukiyasha.modules.proposals import (
 )
 
 
-def started(tmp_path: Path) -> tuple[DiskModule, PrimavtodorModule, ProposalModule, PermissionBroker]:
+def started(
+    tmp_path: Path,
+) -> tuple[DiskModule, PrimavtodorModule, ProposalModule, PermissionBroker]:
     disk = DiskModule(tmp_path / "disk")
     disk.start()
     primavtodor = PrimavtodorModule(disk)

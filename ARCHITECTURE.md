@@ -1,6 +1,6 @@
 # Yukiyasha Architecture
 
-## v0.6.0 — modular monolith with human-approved proposals
+## v0.7.0 — modular monolith with in-context proposal review
 
 ```text
 Browser -> Web/API -> Core Runtime -> Module Registry -> Modules
@@ -80,8 +80,16 @@ creation without mutating storage.
 FastAPI retains TrustedHost validation, same-origin protection for mutations, request-size limits,
 security headers, no-store API responses and threadpool execution for synchronous filesystem work.
 
+## Proposal review UI
+
+The assistant view renders proposal cards directly inside the chat panel. Cards show operation,
+target, status, reason and a field-level diff built from the immutable `before` snapshot and
+normalized proposal payload. Pending cards expose approve/reject controls only in that local
+context. Applied/rejected/stale cards remain visible as recent history without action controls.
+
+The review UI is presentation-only: it calls the existing human-facing proposal API and does not
+grant the AI any new capability.
+
 ## Next architecture step
 
-Add an in-context proposal review surface to the assistant/workspace: show the concrete diff,
-status and stale reason, with approve/reject controls only inside the proposal context rather than
-as global navigation actions.
+Extend the same proposal model to timesheet marks and selected document operations.

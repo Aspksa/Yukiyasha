@@ -1,14 +1,4 @@
-"""AI assistant module: persona, conversations on the disk and a pluggable chat provider.
-
-Everything the assistant remembers lives as plain files on Yukiyasha Disk, so it can be read,
-edited and backed up with ordinary tools:
-
-    ai/persona.md            who the assistant is and how it answers (edit it any time)
-    ai/chats/chat-*.json     one file per conversation
-
-The module depends only on the disk module. It sends the persona and the conversation to the
-provider and nothing else: it has no access to the Примавтодор data (that comes later, read-only).
-"""
+"""AI assistant module with local persona, chats and read-only business tools."""
 
 import json
 import re
@@ -25,13 +15,16 @@ from yukiyasha.modules.ai.errors import (
     MessageRejectedError,
 )
 from yukiyasha.modules.ai.persona_pack import (
+    LEGACY_PROGRAM_RULES,
     RECENT_WINDOW,
     format_examples,
     persona_text,
     pick_examples,
 )
 from yukiyasha.modules.ai.provider import ChatProvider, Message, OpenAICompatibleProvider
+from yukiyasha.modules.ai.tools import AiToolRegistry
 from yukiyasha.modules.disk import DiskConflictError, DiskModule
+from yukiyasha.modules.disk.access import DiskAccess
 from yukiyasha.modules.manifest import ModuleManifest
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.version import get_version
@@ -50,12 +43,17 @@ AI_MANIFEST = ModuleManifest(
     version=get_version(),
     description=(
         "Личный ИИ-помощник: личность и диалоги хранятся на Диске, ответы даёт выбранная "
-        "модель по вашему ключу."
+        "модель по вашему ключу; данные Примавтодора доступны только через read-only инструменты."
     ),
-    permissions=("disk.read", "disk.write", "ai.provider"),
+    permissions=(
+        "disk.read",
+        "disk.write",
+        "disk.delete",
+        "ai.provider",
+        "primavtodor.read",
+    ),
 )
 
-# The persona written by v0.3.0; a file that still equals it is upgraded to the character pack.
 OLD_DEFAULT_PERSONA = """Ты — {name}, личный помощник пользователя в программе Yukiyasha.
 
 Правила:
@@ -72,7 +70,7 @@ def _now() -> str:
 
 
 class ChatTurn:
-    """One question being answered. Iterate :meth:`events`; always call :meth:`release` after."""
+    """One question being answered. Iterate :meth:`events`; always release afterwards."""
 
     def __init__(
         self,
@@ -93,7 +91,6 @@ class ChatTurn:
         self._released = False
 
     def events(self) -> Iterator[dict[str, object]]:
-        """Yield ``meta``, then ``delta`` events and finally ``done`` (after the chat is saved)."""
         yield {"type": "meta", "conversation_id": self.conversation_id}
         parts: list[str] = []
         try:
@@ -123,13 +120,15 @@ class AiModule:
 
     def __init__(
         self,
-        disk: DiskModule,
+        disk: DiskModule | DiskAccess,
         settings: AiSettings | None = None,
         provider: ChatProvider | None = None,
+        tools: AiToolRegistry | None = None,
     ) -> None:
         self._disk = disk
         self.settings = settings or AiSettings()
         self._provider = provider
+        self._tools = tools
         self._slots = threading.BoundedSemaphore(MAX_CONCURRENT)
         self._state = ModuleState.REGISTERED
         self._last_error: str | None = None
@@ -138,16 +137,19 @@ class AiModule:
     def state(self) -> ModuleState:
         return self._state
 
-    # ----- lifecycle -----
-
     def start(self) -> None:
         self._disk.make_dir(CHATS_DIR)
         default = persona_text(self.settings.assistant_name)
-        try:  # keep a persona the user already edited
+        try:
             self._disk.write_text(PERSONA_PATH, default, overwrite=False)
         except DiskConflictError:
-            old = OLD_DEFAULT_PERSONA.format(name=self.settings.assistant_name)
-            if self._disk.read_text(PERSONA_PATH) == old:
+            current = self._disk.read_text(PERSONA_PATH)
+            old_plain = OLD_DEFAULT_PERSONA.format(name=self.settings.assistant_name)
+            old_character = persona_text(
+                self.settings.assistant_name,
+                program_rules=LEGACY_PROGRAM_RULES,
+            )
+            if current in {old_plain, old_character}:
                 self._disk.write_text(PERSONA_PATH, default, overwrite=True)
         self._last_error = None
         self._state = ModuleState.READY
@@ -165,15 +167,13 @@ class AiModule:
             "configured": self.settings.configured,
             "provider": self.settings.provider_host,
             "model": self.settings.model or None,
+            "tools": list(self._tools.names) if self._tools else [],
         }
         if self._last_error:
             health["error"] = self._last_error
         return {"manifest": self.manifest.to_dict(), "state": self.state.value, "health": health}
 
-    # ----- status & persona -----
-
     def status(self) -> dict[str, object]:
-        """Safe to show: never contains the key."""
         settings = self.settings
         return {
             "configured": settings.configured,
@@ -182,6 +182,8 @@ class AiModule:
             "model": settings.model or None,
             "assistant_name": settings.assistant_name,
             "persona_path": PERSONA_PATH,
+            "tools": list(self._tools.names) if self._tools else [],
+            "tool_access": "read-only" if self._tools else "none",
             "limits": {
                 "max_message_chars": MAX_MESSAGE_CHARS,
                 "max_tokens": settings.max_tokens,
@@ -199,8 +201,6 @@ class AiModule:
         if len(text) > MAX_PERSONA_CHARS:
             raise MessageRejectedError(f"Слишком длинно: не больше {MAX_PERSONA_CHARS} символов")
         self._disk.write_text(PERSONA_PATH, text + "\n", overwrite=True)
-
-    # ----- conversations -----
 
     def _chat_path(self, chat_id: str) -> str:
         if not CHAT_ID_RE.match(chat_id):
@@ -261,15 +261,9 @@ class AiModule:
         text = json.dumps(chat, ensure_ascii=False, indent=2) + "\n"
         self._disk.write_text(self._chat_path(str(chat["id"])), text, overwrite=True)
 
-    # ----- chatting -----
-
     def _context(
         self, persona: str, history: list[object], user_text: str
     ) -> tuple[list[Message], list[str]]:
-        """System prompt + as much recent history as fits the budget + the new message.
-
-        Also returns the ids of the tone examples added to the system prompt.
-        """
         recent = [
             str(i)
             for item in history[-RECENT_WINDOW:]
@@ -294,12 +288,30 @@ class AiModule:
         messages: list[Message] = [system, *kept, {"role": "user", "content": user_text}]
         return messages, [str(e["id"]) for e in examples]
 
-    def begin_chat(self, chat_id: str | None, message: str) -> ChatTurn:
-        """Validate, connect to the provider and return the turn to stream.
+    def _add_tool_results(
+        self, provider: ChatProvider, context: list[Message], user_text: str
+    ) -> list[Message]:
+        if not self._tools or not self._tools.might_need_tools(user_text):
+            return context
+        planner = getattr(provider, "plan_tools", None)
+        if not callable(planner):
+            return context
+        plan = planner(context, self._tools.definitions())
+        if plan is None:
+            return context
+        enriched = [*context, plan.message]
+        for call in plan.calls:
+            enriched.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "name": call.name,
+                    "content": self._tools.execute(call.name, call.arguments),
+                }
+            )
+        return enriched
 
-        Nothing is written to the disk until the whole answer has arrived, so a failed request
-        leaves no half-finished conversation behind.
-        """
+    def begin_chat(self, chat_id: str | None, message: str) -> ChatTurn:
         text = message.strip()
         if not text:
             raise MessageRejectedError("Введите сообщение")
@@ -313,8 +325,12 @@ class AiModule:
         if chat_id:
             chat = self.get_chat(chat_id)
         else:
-            chat = {"id": f"chat-{uuid.uuid4().hex[:8]}", "title": "", "created_at": _now(),
-                    "messages": []}
+            chat = {
+                "id": f"chat-{uuid.uuid4().hex[:8]}",
+                "title": "",
+                "created_at": _now(),
+                "messages": [],
+            }
 
         if not self._slots.acquire(blocking=False):
             raise AiBusyError("Помощник уже обрабатывает запросы — подождите немного")
@@ -324,6 +340,7 @@ class AiModule:
                 self.persona(), history if isinstance(history, list) else [], text
             )
             provider = self._provider or OpenAICompatibleProvider(self.settings)
+            context = self._add_tool_results(provider, context, text)
             stream = provider.open(context)
         except BaseException:
             self._slots.release()

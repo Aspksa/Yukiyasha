@@ -1,5 +1,6 @@
 """График машин: trips and busy days per car, overlaps shown but never forbidden."""
 
+import json
 from datetime import date
 from pathlib import Path
 
@@ -231,8 +232,9 @@ def test_a_broken_date_in_the_timesheet_file_does_not_break_the_schedule(
     car = make_vehicle(module, plate="Х1", model="Hino")
     driver = make_driver(module, car["id"])
     path = module._disk.root / "projects/work/Примавтодор/Табель/2026-10.json"
+    marks = {"не-дата": "Б", "2026-10-08": "Б"}
     path.write_text(
-        '{"month": "2026-10", "marks": {"%s": {"не-дата": "Б", "2026-10-08": "Б"}}}' % driver["id"],
+        json.dumps({"month": "2026-10", "marks": {driver["id"]: marks}}, ensure_ascii=False),
         encoding="utf-8",
     )
 

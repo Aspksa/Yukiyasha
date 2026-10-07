@@ -261,6 +261,19 @@ class DiskModule:
                 except OSError:
                     pass
 
+    def make_dir(self, relative_path: str) -> None:
+        """Create a directory and any missing parents. Existing directories are left alone."""
+        self._require_ready()
+        path = self._resolve(relative_path)
+        if path == self.root.resolve():
+            return
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except (FileExistsError, NotADirectoryError) as exc:
+            raise DiskConflictError("Path conflicts with an existing file") from exc
+        except OSError as exc:
+            raise self._translate_os_error(exc) from exc
+
     def delete(self, relative_path: str) -> None:
         self._require_ready()
         self._validated_relative(relative_path)

@@ -122,6 +122,15 @@ def create_app(
     def modules() -> list[dict[str, object]]:
         return runtime.modules.snapshots()
 
+    @application.get("/api/primavtodor/sections")
+    def primavtodor_sections() -> list[dict[str, object]]:
+        if runtime.primavtodor.state is not ModuleState.READY:
+            raise HTTPException(status_code=503, detail="Primavtodor module is not ready")
+        try:
+            return runtime.primavtodor.section_summaries()
+        except DiskError as exc:
+            raise disk_http_error(exc) from exc
+
     @application.get("/api/disk")
     def disk_list(path: str = Query(default="")) -> dict[str, object]:
         require_disk_ready()

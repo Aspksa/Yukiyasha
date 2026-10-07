@@ -8,6 +8,7 @@ from enum import StrEnum
 from yukiyasha.config import Settings
 from yukiyasha.modules import ModuleRegistry
 from yukiyasha.modules.disk import DiskModule
+from yukiyasha.modules.primavtodor import PrimavtodorModule
 
 logger = logging.getLogger("yukiyasha.runtime")
 
@@ -43,6 +44,9 @@ class YukiyashaRuntime:
         self.modules = ModuleRegistry()
         self.disk = DiskModule(self.settings.disk_dir)
         self.modules.register(self.disk)
+        # Registered after the disk it depends on: modules start in order, stop in reverse.
+        self.primavtodor = PrimavtodorModule(self.disk)
+        self.modules.register(self.primavtodor)
 
     @property
     def state(self) -> RuntimeState:

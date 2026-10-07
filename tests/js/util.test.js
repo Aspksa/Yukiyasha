@@ -56,6 +56,7 @@ test("hash routing round-trips, including unicode, spaces and plus signs", () =>
     { file: "projects/home/заметки/идея 1.md" },
     { file: "projects/work/a+b.txt" },
     { system: true },
+    { module: "primavtodor" },
   ];
   for (const route of routes) {
     const parsed = u.parseHash(u.routeToHash(route));
@@ -66,4 +67,14 @@ test("hash routing round-trips, including unicode, spaces and plus signs", () =>
 test("parseHash falls back to the work section", () => {
   assert.deepEqual(u.parseHash(""), { dir: "projects/work" });
   assert.deepEqual(u.parseHash("#garbage"), { dir: "projects/work" });
+});
+
+test("navFor highlights a module for everything inside its folder", () => {
+  const dirs = { primavtodor: "projects/work/Примавтодор" };
+  assert.equal(u.navFor("projects/work/Примавтодор", dirs), "module:primavtodor");
+  assert.equal(u.navFor("projects/work/Примавтодор/Табель", dirs), "module:primavtodor");
+  assert.equal(u.navFor("projects/work/ПримавтодорX", dirs), "projects/work");
+  assert.equal(u.navFor("projects/work", dirs), "projects/work");
+  assert.equal(u.navFor("projects/home/a", dirs), "projects/home");
+  assert.equal(u.navFor("", dirs), "");
 });

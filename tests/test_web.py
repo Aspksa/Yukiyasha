@@ -360,3 +360,16 @@ def test_reserved_temp_name_is_rejected_over_http(client: TestClient) -> None:
     )
 
     assert response.status_code == 400
+
+
+def test_primavtodor_module_is_listed_and_its_folder_is_in_the_work_section(
+    client: TestClient,
+) -> None:
+    modules = {item["manifest"]["module_id"]: item for item in client.get("/api/modules").json()}
+
+    assert modules["primavtodor"]["manifest"]["name"] == "Примавтодор"
+    assert modules["primavtodor"]["state"] == "ready"
+
+    entries = client.get("/api/disk", params={"path": "projects/work"}).json()["entries"]
+    assert {"name": "Примавтодор", "path": "projects/work/Примавтодор", "type": "directory",
+            "size": 0} in entries

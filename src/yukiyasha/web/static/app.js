@@ -707,6 +707,7 @@ function renderModules(snapshots) {
         details.append(dt, dd);
       };
       if (health?.root) addRow("Каталог", health.root);
+      if (health?.directory) addRow("Папка на Диске", health.directory);
       if (health?.error) addRow("Ошибка", health.error);
 
       card.append(head, description, chips, details);

@@ -427,3 +427,33 @@ def test_disk_rejects_paths_whose_real_target_escapes(
 
     with pytest.raises(DiskSecurityError, match="escapes"):
         disk.list_entries("junction")
+
+
+def test_disk_make_dir_creates_nested_directories_idempotently(tmp_path: Path) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+
+    disk.make_dir("a/b/c")
+    disk.make_dir("a/b/c")  # second call is a no-op
+    disk.make_dir("")  # the root already exists
+
+    assert (tmp_path / "disk" / "a" / "b" / "c").is_dir()
+    assert [entry["name"] for entry in disk.list_entries("a/b")] == ["c"]
+
+
+def test_disk_make_dir_rejects_conflicts_traversal_and_not_ready(tmp_path: Path) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    with pytest.raises(DiskNotReadyError):
+        disk.make_dir("x")
+
+    disk.start()
+    disk.write_text("file.txt", "x")
+    with pytest.raises(DiskConflictError):
+        disk.make_dir("file.txt")
+    with pytest.raises(DiskConflictError):
+        disk.make_dir("file.txt/sub")
+    with pytest.raises(DiskSecurityError):
+        disk.make_dir("../outside")
+    with pytest.raises(DiskPathError):
+        disk.make_dir("bad:name")
+    assert not (tmp_path / "outside").exists()

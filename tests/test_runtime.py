@@ -46,3 +46,22 @@ def test_runtime_stays_available_as_degraded_when_module_start_fails(
 
     assert runtime.state is RuntimeState.DEGRADED
     assert runtime.disk.state is ModuleState.FAILED
+
+
+def test_runtime_registers_primavtodor_after_the_disk_and_creates_its_folder(
+    tmp_path: Path,
+) -> None:
+    runtime = YukiyashaRuntime(Settings(disk_dir=tmp_path / "disk"))
+
+    ids = [snapshot["manifest"]["module_id"] for snapshot in runtime.modules.snapshots()]
+    assert ids == ["disk", "primavtodor"]  # start order: the disk comes first
+
+    runtime.start()
+
+    assert runtime.state is RuntimeState.READY
+    assert runtime.primavtodor.state is ModuleState.READY
+    assert (tmp_path / "disk" / "projects" / "work" / "Примавтодор").is_dir()
+
+    runtime.stop()
+    assert runtime.primavtodor.state is ModuleState.STOPPED
+    assert runtime.disk.state is ModuleState.STOPPED

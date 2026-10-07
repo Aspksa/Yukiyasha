@@ -4,6 +4,13 @@ All notable changes to Yukiyasha are documented here.
 
 ## [Unreleased]
 
+### Added
+- module **Примавтодор** (`primavtodor`, skeleton): registered after the disk, it creates and
+  owns `projects/work/Примавтодор`, which appears in the "Рабочие" section; the folder is
+  recreated on startup if it was deleted; the module shows up on the system page;
+- `DiskModule.make_dir()` — idempotent directory creation with the same path validation as
+  every other disk operation.
+
 ### Fixed
 - `pip install .` / wheel build failed with a duplicate-file error (redundant hatch
   `force-include` of the static UI); CI now builds the wheel and checks the packaged UI;
@@ -30,7 +37,7 @@ All notable changes to Yukiyasha are documented here.
   `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`;
 - API responses are `Cache-Control: no-store`, UI files are `no-cache` (always revalidated).
 
-### Added
+### Added (workspace UI)
 - `util.js` with the UI's pure helpers and `node --test` unit tests, run in Fast CI;
 - browser workspace: sidebar navigation (work, home, whole disk, system), breadcrumbs,
   folder navigation, name filter, text editor with save (Ctrl+S), file creation with

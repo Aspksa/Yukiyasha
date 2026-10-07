@@ -20,6 +20,7 @@
 - 1 MiB text limit and 2 MiB HTTP body limit.
 - Stable default disk root under `~/.yukiyasha/disk`.
 - Host and browser Origin validation for the local API.
+- Module Примавтодор (skeleton): owns the `projects/work/Примавтодор` folder; domain features come later.
 - Browser workspace: file browser, text editor, create/delete and system page backed by Yukiyasha Disk.
 - Isolated API tests using temporary disk roots.
 - Windows launcher dependency fingerprinting and safer port fallback.

@@ -38,6 +38,17 @@ Browser -> Web/API -> Core -> Module Registry -> Modules
 
 Core and modules never import from Web/API.
 
+## Модуль Примавтодор
+
+Skeleton of a work-project module. It depends only on the disk module (never on the web layer),
+is registered right after it (modules start in registration order and stop in reverse) and owns
+the folder `projects/work/Примавтодор`. The module id is ASCII (`primavtodor`); the display name
+is Russian. Its declared permissions (`disk.read`, `disk.write`) are metadata until the central
+permission boundary exists.
+
+Note: a failing module start rolls back every module started before it (registry semantics), so a
+non-folder entry named `Примавтодор` in the work section degrades the whole runtime.
+
 ## Диск Yukiyasha
 
 Default root:

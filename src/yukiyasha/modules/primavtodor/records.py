@@ -219,6 +219,19 @@ class Records:
         entity = self.entity(kind)
         return self._view(entity, self._stores[kind].load(record_id), self._ctx())
 
+    def validate(
+        self,
+        kind: str,
+        payload: dict[str, object],
+        *,
+        record_id: str | None = None,
+    ) -> dict[str, object]:
+        """Validate and normalize values without mutating storage."""
+        entity = self.entity(kind)
+        if record_id is not None:
+            self._stores[kind].load(record_id)
+        return self._clean(entity, payload, self._ctx(), own_id=record_id)
+
     def create(self, kind: str, payload: dict[str, object]) -> dict[str, object]:
         entity = self.entity(kind)
         store = self._stores[kind]

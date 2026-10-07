@@ -823,3 +823,121 @@ def test_a_streamed_post_response_completes_through_the_middleware(
         response = test_client.post("/api/test-stream", json={})
 
     assert response.text == "data: 1\n\ndata: 2\n\n"
+
+
+
+# ----- long-term memory API -----
+
+def test_memory_api_roundtrip_search_and_forget(client: TestClient) -> None:
+    created = client.post(
+        "/api/memory",
+        json={"text": "Пользователь предпочитает тёмную тему"},
+    )
+
+    assert created.status_code == 201
+    memory_id = created.json()["id"]
+    assert memory_id.startswith("mem-")
+    assert client.get("/api/memory").json()["memories"][0]["id"] == memory_id
+
+    found = client.get("/api/memory/search", params={"q": "какую тему предпочитает"}).json()
+    assert [item["id"] for item in found["memories"]] == [memory_id]
+
+    removed = client.delete(f"/api/memory/{memory_id}")
+    assert removed.status_code == 200
+    assert client.get("/api/memory").json()["memories"] == []
+    assert client.delete(f"/api/memory/{memory_id}").status_code == 404
+
+
+def test_memory_api_rejects_secrets_and_foreign_origin(client: TestClient) -> None:
+    rejected = client.post(
+        "/api/memory",
+        json={"text": "Мой пароль: hunter2"},
+    )
+    blocked = client.post(
+        "/api/memory",
+        json={"text": "Запомни безопасную настройку"},
+        headers={"Origin": "http://evil.example"},
+    )
+
+    assert rejected.status_code == 422
+    assert blocked.status_code == 403
+    assert client.get("/api/memory").json()["memories"] == []
+
+
+
+# ----- proposal / human approval API -----
+
+def test_proposal_api_requires_separate_human_approval(client: TestClient) -> None:
+    runtime = client.app.state.runtime
+    proposal = runtime.proposals.create(
+        operation="create",
+        kind="vehicles",
+        payload={
+            "plate": "А555АА25",
+            "model": "ГАЗ Соболь",
+            "fuel_type": "ДТ",
+            "norm_summer": 13,
+            "norm_winter": 15,
+            "odometer_km": 10,
+            "active": True,
+        },
+        reason="Добавить машину",
+    )
+    proposal_id = proposal["id"]
+
+    assert client.get(f"/api/proposals/{proposal_id}").json()["status"] == "pending"
+    assert client.get(f"{BASE}/records/vehicles").json()["records"] == []
+
+    approved = client.post(f"/api/proposals/{proposal_id}/approve")
+
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "applied"
+    vehicles = client.get(f"{BASE}/records/vehicles").json()["records"]
+    assert len(vehicles) == 1 and vehicles[0]["values"]["plate"] == "А555АА25"
+    assert client.post(f"/api/proposals/{proposal_id}/approve").status_code == 409
+
+
+def test_proposal_approval_and_rejection_reject_foreign_origin(client: TestClient) -> None:
+    runtime = client.app.state.runtime
+    proposal = runtime.proposals.create(
+        operation="create",
+        kind="vehicles",
+        payload={"plate": "В111ВВ25", "model": "УАЗ", "active": True},
+    )
+    proposal_id = proposal["id"]
+    evil = {"Origin": "http://evil.example"}
+
+    assert client.post(f"/api/proposals/{proposal_id}/approve", headers=evil).status_code == 403
+    assert client.post(f"/api/proposals/{proposal_id}/reject", headers=evil).status_code == 403
+    assert client.get(f"/api/proposals/{proposal_id}").json()["status"] == "pending"
+
+    rejected = client.post(f"/api/proposals/{proposal_id}/reject")
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+
+
+def test_stale_proposal_returns_conflict_without_overwriting(client: TestClient) -> None:
+    created = client.post(
+        f"{BASE}/records/vehicles",
+        json={"plate": "С222СС25", "model": "Исходная", "active": True},
+    ).json()
+    runtime = client.app.state.runtime
+    proposal = runtime.proposals.create(
+        operation="update",
+        kind="vehicles",
+        record_id=created["id"],
+        payload={"model": "Предложенная"},
+    )
+
+    changed = {**created["values"], "model": "Изменена вручную"}
+    assert client.put(
+        f"{BASE}/records/vehicles/{created['id']}",
+        json=changed,
+    ).status_code == 200
+
+    response = client.post(f"/api/proposals/{proposal['id']}/approve")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["status"] == "stale"
+    current = client.get(f"{BASE}/records/vehicles/{created['id']}").json()
+    assert current["values"]["model"] == "Изменена вручную"

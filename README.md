@@ -4,14 +4,14 @@ Yukiyasha is a modular AI-oriented platform foundation with a local web interfac
 
 ## Current version
 
-**v0.3.0 — Workspace, Примавтодор and AI assistant**
+**v0.8.0 — Rich document cards in chat**
 
 The current release provides:
 - modular Python core and module registry with explicit lifecycle and health;
 - sandboxed local **Диск Yukiyasha** and a browser workspace (file manager, editor, system page);
 - the **Примавтодор** module: waybills, fuel (ГСМ), employees with fuel cards and vehicles, garage,
   timesheet, seasonal fuel norms with one summer/winter switch, document folders;
-- an **AI assistant** you connect with your own API key (see below);
+- an **AI assistant** with audited read access, long-term memory, rich document cards and human-approved write proposals;
 - FastAPI web/API layer, automated tests and two-tier CI.
 
 ## Requirements
@@ -103,12 +103,35 @@ as ordinary environment variables (they win over the file). `http://` is accepte
 - The key lives only in that file or the environment: it is never stored on the disk module,
   written to a log, returned by the API or shown in the UI, and it is scrubbed from error texts.
 - **Every message is sent to the provider** together with the persona and the earlier messages of
-  the conversation. The assistant currently sees none of the Yukiyasha data (waybills, employees,
-  documents). Do not paste personal data you would not send to that provider.
+  the conversation. For questions about Примавтодор, a compatible provider can request read-only
+  local tools for waybills, fuel, employees, vehicles, timesheets, settings and document
+  metadata. Tool results are also sent to the provider. **Document contents are not sent merely
+  to render a card**: card previews are loaded locally by the browser from Yukiyasha. Phone
+  numbers, personnel numbers and fuel-card numbers are masked
+  before they leave Yukiyasha. Providers that do not support standard OpenAI tools fall back to
+  ordinary chat.
 - By default the assistant speaks as Юкияша (a bundled character pack); examples of her tone are
   added to the prompt, so the request is a little longer. Replace the persona any time.
 - The persona (`ai/persona.md`) and the conversations (`ai/chats/chat-*.json`) are plain files on
   the disk; edit the persona on the page ("Личность") at any time.
+- Direct Примавтодор access stays read-only. For mutation requests the assistant can only create
+  a validated **proposal**. A proposal changes nothing until a person separately approves its id
+  through the local API. Update/delete proposals capture the source record fingerprint and become
+  `stale` instead of overwriting data that changed after the proposal was created.
+- Proposal lifecycle is transparent through the local API and appears directly in the assistant
+  conversation as review cards with old/new diff, status, and local approve/reject controls.
+- Documents found by the assistant are shown as **mini-document cards**, not raw paths or links:
+  human title, section, format, size, local text preview and an «Открыть» action into the existing
+  Yukiyasha editor. The document path stays internal to the UI.
+- Tool disclosures and proposal lifecycle events are written to
+  `system/audit/YYYY-MM-DD/*.json` without copying the business payload itself.
+- **Long-term memory** is separate from chat history and stored as JSON under
+  `memory/items/*.json`. The assistant can add or remove a memory only after an explicit
+  remember/forget request. Sensitive credential material is rejected. Memory actions are audited
+  without copying memory text or search queries into the audit event.
+- Memory can also be inspected through `GET /api/memory`, searched with
+  `GET /api/memory/search?q=...`, added with `POST /api/memory`, and removed with
+  `DELETE /api/memory/{id}`.
 - Cost control: answers are limited by `MAX_TOKENS`, a conversation sends only the most recent
   history that fits the context budget, and at most two answers are produced at a time.
 
@@ -136,8 +159,11 @@ node --test tests/js/util.test.js   # UI helpers, needs Node 20+
 ```text
 src/yukiyasha/
   core/        application runtime
-  modules/     module runtime and modules
-    disk/      Диск Yukiyasha
+  modules/     module runtime, permissions and modules
+    disk/      Диск Yukiyasha + scoped module access
+    ai/        assistant + guarded tool registry
+    memory/    explicit long-term memory
+    proposals/ human-approved mutation proposals
   web/         FastAPI application, middleware and browser UI
 tests/         isolated automated tests
 ```

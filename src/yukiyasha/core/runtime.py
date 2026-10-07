@@ -8,8 +8,15 @@ from enum import StrEnum
 from yukiyasha.config import Settings
 from yukiyasha.modules import ModuleRegistry
 from yukiyasha.modules.ai import AiModule
+from yukiyasha.modules.ai.tools import AiToolRegistry
+from yukiyasha.modules.audit import AuditLog
 from yukiyasha.modules.disk import DiskModule
+from yukiyasha.modules.disk.access import DiskAccess
+from yukiyasha.modules.memory import MemoryAccess, MemoryModule
+from yukiyasha.modules.permissions import PermissionBroker
 from yukiyasha.modules.primavtodor import PrimavtodorModule
+from yukiyasha.modules.primavtodor.access import PrimavtodorReadAccess, PrimavtodorWriteAccess
+from yukiyasha.modules.proposals import ProposalCreateAccess, ProposalModule
 
 logger = logging.getLogger("yukiyasha.runtime")
 
@@ -36,20 +43,90 @@ class RuntimeSnapshot:
 
 
 class YukiyashaRuntime:
-    """Application kernel and module lifecycle owner."""
+    """Application kernel, module lifecycle and capability owner."""
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or Settings.from_env()
         self._started_at: datetime | None = None
         self._state = RuntimeState.STOPPED
         self.modules = ModuleRegistry()
+        self.permissions = PermissionBroker()
+
         self.disk = DiskModule(self.settings.disk_dir)
         self.modules.register(self.disk)
-        # Registered after the disk it depends on: modules start in order, stop in reverse.
-        self.primavtodor = PrimavtodorModule(self.disk)
+        self.permissions.register(self.disk.manifest)
+
+        memory_disk = DiskAccess(
+            self.disk,
+            self.permissions,
+            "memory",
+            roots=("memory",),
+        )
+        self.memory = MemoryModule(memory_disk)
+        self.modules.register(self.memory)
+        self.permissions.register(self.memory.manifest)
+
+        primavtodor_disk = DiskAccess(
+            self.disk,
+            self.permissions,
+            "primavtodor",
+            roots=("projects/work/Примавтодор",),
+        )
+        self.primavtodor = PrimavtodorModule(primavtodor_disk)
         self.modules.register(self.primavtodor)
-        self.ai = AiModule(self.disk, self.settings.ai)
+        self.permissions.register(self.primavtodor.manifest)
+
+        self.audit = AuditLog(self.disk)
+
+        proposals_disk = DiskAccess(
+            self.disk,
+            self.permissions,
+            "proposals",
+            roots=("proposals",),
+        )
+        proposals_write = PrimavtodorWriteAccess(
+            self.primavtodor,
+            self.permissions,
+            "proposals",
+        )
+        self.proposals = ProposalModule(
+            proposals_disk,
+            proposals_write,
+            self.audit,
+        )
+        self.modules.register(self.proposals)
+        self.permissions.register(self.proposals.manifest)
+
+        ai_disk = DiskAccess(
+            self.disk,
+            self.permissions,
+            "ai",
+            roots=("ai",),
+        )
+        primavtodor_read = PrimavtodorReadAccess(
+            self.primavtodor,
+            self.permissions,
+            "ai",
+        )
+        memory_access = MemoryAccess(
+            self.memory,
+            self.permissions,
+            "ai",
+        )
+        proposal_create = ProposalCreateAccess(
+            self.proposals,
+            self.permissions,
+            "ai",
+        )
+        ai_tools = AiToolRegistry(
+            primavtodor_read,
+            self.audit,
+            memory_access,
+            proposal_create,
+        )
+        self.ai = AiModule(ai_disk, self.settings.ai, tools=ai_tools)
         self.modules.register(self.ai)
+        self.permissions.register(self.ai.manifest)
 
     @property
     def state(self) -> RuntimeState:
@@ -61,7 +138,6 @@ class YukiyashaRuntime:
         try:
             self.modules.start_all()
         except Exception:
-            # Keep serving (health/modules report the failure) but never hide the cause.
             logger.exception("Module startup failed; runtime is degraded")
             self._state = RuntimeState.DEGRADED
             return

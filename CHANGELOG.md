@@ -24,6 +24,117 @@ All notable changes to Yukiyasha are documented here.
   messages about real danger). A persona file still equal to the 0.3.0 default is upgraded on
   start; an edited persona is left alone.
 
+## [0.8.0] - 2026-10-07
+
+Documents found by Юкияша are now first-class visual objects in the conversation instead of raw
+file paths.
+
+### Added
+- Read-only document metadata tool for the five Примавтодор document sections.
+- Structured document refs persisted on assistant messages and emitted during streaming.
+- Rich mini-document cards with section, human-readable title, format, size and local preview.
+- One-click opening into the existing Yukiyasha file editor; the disk path stays hidden.
+- Pure `documents.js` presentation helpers with Node tests.
+
+### Privacy
+- Document contents are not sent to the AI provider merely to build the card or preview.
+- The provider receives document metadata from the list tool; text preview is fetched locally by
+  the browser through the existing protected Disk API.
+- Default persona instructs the assistant not to print raw document paths or turn them into links.
+
+## [0.7.0] - 2026-10-07
+
+Proposal review is now available directly inside the assistant conversation.
+
+### Added
+- In-chat proposal cards with operation, target, reason, status and field-level diff.
+- Approve/reject controls only inside pending proposal cards; no new global navigation actions.
+- Immutable `before` snapshot for update/delete proposals so the browser can show exact old/new values.
+- Pure `proposals.js` UI helpers with Node tests for create/update/delete diffs.
+- JavaScript syntax checks for assistant/proposal UI in Fast CI.
+
+### Changed
+- Assistant privacy text now accurately explains read-only Примавтодор tool disclosure and proposal approval.
+- Recent applied/rejected/stale proposals stay visible in the assistant as history without action controls.
+
+## [0.6.0] - 2026-10-07
+
+AI-assisted Примавтодор mutations now go through a concrete proposal and separate human approval.
+
+### Added
+- New **Предложения** module with scoped `proposals/**` storage and lifecycle health.
+- Validated create/update/delete proposals for structured Примавтодор records.
+- Partial update proposals are expanded to a full normalized target state before persistence.
+- Source fingerprints for update/delete proposals; changed targets become `stale` on approval.
+- Human proposal API: list/get, approve and reject.
+- Assistant capability `proposal.create` and the `primavtodor_propose_change` tool.
+- Dry-run `Records.validate()` for schema/reference/uniqueness checks without mutation.
+- Migration of an untouched v0.5 default persona to proposal-aware rules.
+
+### Security
+- The assistant has no direct Примавтодор write/delete capability and no proposal apply/reject tool.
+- Proposal execution re-checks the current user message for mutation intent.
+- Approval/rejection uses the existing same-origin mutation boundary.
+- Completed proposals are one-shot; stale proposals never overwrite newer record state.
+- Proposal audit events omit the proposed business payload.
+
+### Changed
+- Runtime module order is now Disk → Memory → Примавтодор → Proposals → Assistant.
+- Project architecture now treats business writes as a two-phase propose/approve workflow.
+
+## [0.5.0] - 2026-10-07
+
+Long-term assistant memory behind the same permission and audit boundaries as business tools.
+
+### Added
+- New **Memory** module with scoped `memory/**` storage, lifecycle health and one JSON file per
+  durable memory item.
+- Exact-text deduplication, local token-overlap retrieval, 2,000-character item limit and
+  500-item store limit.
+- AI capabilities `memory.read`, `memory.write` and `memory.delete` through `MemoryAccess`.
+- Guarded AI tools `memory_search`, `memory_remember` and `memory_forget`.
+- Transparent memory API: list, search, add and remove entries.
+- Migration of an untouched v0.4 default persona to the new memory-aware rules.
+
+### Security
+- Memory write/delete tools are advertised and executed only for explicit remember/forget intent
+  in the current user message.
+- Credential-like material is rejected before long-term persistence.
+- Memory audit records omit both stored text and search queries.
+- The assistant still has no create/update/delete capability over Примавтодор.
+
+### Changed
+- Runtime module order is now Disk → Memory → Примавтодор → Assistant.
+- Assistant tool status is `guarded` rather than globally read-only because memory mutations are
+  allowed only under the explicit-intent boundary.
+
+## [0.4.0] - 2026-10-07
+
+Permissions, audited read-only Примавтодор tools for the assistant, and the Yukiyasha character.
+
+### Added
+- Runtime-owned `PermissionBroker` with default-deny module capability checks.
+- Path-scoped `DiskAccess` views: Примавтодор is confined to its project tree; AI to `ai/**`.
+- Explicit `primavtodor.read` capability and a read-only facade for records, timesheet and settings.
+- Four assistant tools: list/get records, timesheet and settings; no write/delete tools.
+- Sensitive-field masking before tool results leave Yukiyasha.
+- Persistent audit events under `system/audit/YYYY-MM-DD/*.json`; business payloads and API keys
+  are not copied into the audit record.
+- Standard OpenAI-compatible tool planning with fallback to ordinary chat for providers that reject
+  the standard `tools` request.
+- The assistant now speaks as **Юкияша** by default using the bundled character pack and tone
+  examples; an untouched older default persona is upgraded automatically.
+
+### Security
+- Module-to-module data access is permission-checked and path-scoped.
+- AI business access is read-only and fail-closed: disclosure requires a successful audit write.
+- Phone numbers, personnel numbers and fuel-card/card values are masked before provider transfer.
+- Tool calls are capped per turn and arguments are validated against a small allow-list.
+
+### Changed
+- The default persona now accurately states that read-only Примавтодор tools are available.
+- Project documentation now describes the capability boundary, masking and audit model.
+
 ## [0.3.0] - 2026-10-07
 
 Workspace UI, the **Примавтодор** module with linked data, and the first version of the

@@ -1,5 +1,6 @@
 """Примавтодор module."""
 
+from yukiyasha.modules.primavtodor.access import PrimavtodorReadAccess
 from yukiyasha.modules.primavtodor.errors import (
     InvalidDocumentNameError,
     PrimavtodorError,
@@ -28,6 +29,7 @@ __all__ = [
     "PrimavtodorError",
     "PrimavtodorModule",
     "PrintNotAvailableError",
+    "PrimavtodorReadAccess",
     "RecordInUseError",
     "RecordNotFoundError",
     "RecordValidationError",

@@ -1,101 +1,51 @@
 # Yukiyasha Architecture
 
-## Module foundation (v0.3.0)
-
-Yukiyasha is a modular monolith with explicit runtime, module and transport boundaries.
-
-### Layers
-
-1. **Core**
-   - owns runtime lifecycle and the module registry;
-   - coordinates degraded/ready/stopped state;
-   - does not depend on FastAPI or browser code.
-
-2. **Application configuration**
-   - immutable environment-driven settings;
-   - service identity and stable storage paths;
-   - package version comes from installed package metadata.
-
-3. **Modules**
-   - explicit manifest;
-   - registered/ready/failed/stopped lifecycle;
-   - health snapshots;
-   - declared permissions;
-   - no dependency on the web layer.
-
-4. **Web/API**
-   - transport and HTTP safety boundary;
-   - request body, Host and same-origin validation;
-   - security headers (CSP without inline code, no framing, no MIME sniffing) and cache rules;
-   - synchronous filesystem endpoints run through FastAPI's threadpool.
-
-### Dependency rule
+## v0.8.0 — modular monolith with rich in-chat document objects
 
 ```text
-Browser -> Web/API -> Core -> Module Registry -> Modules
-                    -> Configuration
+Browser -> Web/API -> Core Runtime -> Module Registry -> Modules
+                           |               |
+                           +-> Permissions +-> scoped capabilities
+                           +-> Audit
 ```
 
-Core and modules never import from Web/API.
+Core and modules do not import the Web/API layer.
 
-## Модуль «Помощник» (ИИ по ключу)
+## Runtime and capabilities
 
-`modules/ai` depends only on the disk module. A `ChatProvider` (`open(messages) -> chunks`) hides
-the vendor: `OpenAICompatibleProvider` speaks the common `/chat/completions` streaming protocol
-over the standard library, so there is no extra dependency and any compatible service (cloud or
-local) works. Settings (`config.AiSettings`) come from the environment or `ai.env`; the key is
-excluded from `repr`, never persisted and scrubbed from errors.
+The runtime owns a default-deny `PermissionBroker`. Modules receive scoped facades instead of
+raw dependencies.
 
-- one turn = validate → build the context (persona + the history that fits the budget + the new
-  message) → connect (errors surface as HTTP statuses before any streaming starts) → stream
-  server-sent events → save the conversation only when the whole answer has arrived;
-- a bounded semaphore limits concurrent answers; the slot is released when the stream ends or
-  the response is torn down;
-- the module reads no business data. Giving it read-only tools (waybills, fuel, timesheet) is a
-  separate step that needs the permission boundary first.
+Current scopes:
+- `memory`: disk access under `memory/**`;
+- `primavtodor`: disk access under `projects/work/Примавтодор/**`;
+- `proposals`: disk access under `proposals/**` plus controlled Примавтодор mutation access;
+- `ai`: disk access under `ai/**`, read-only Примавтодор access, Memory access, and
+  `proposal.create`.
 
-## Модуль Примавтодор
+The AI module is not granted direct Примавтодор mutation capability and has no proposal
+approve/reject capability.
 
-Work-project module. It depends only on the disk module (never on the web layer), is registered
-right after it (modules start in registration order and stop in reverse) and owns the folder
-`projects/work/Примавтодор`. Each section is one sub-folder; all data lives on the disk and the
-module reaches it only through the disk's public API.
+## Proposal lifecycle
 
-| Group | Sections (in data-flow order) |
-| --- | --- |
-| Учёт | Путевые листы → Горюче-смазочные материалы → Сотрудники → Гараж → Табель |
-| Документы | Договора, Счёт-оферта, Служебные записки, Приказы, Распоряжения |
+Proposal files live under `proposals/items/*.json`.
 
-Section ids are ASCII (`waybills`, `fuel`, `employees`, `garage`, `timesheet`, `contracts`,
-`invoice_offer`, `memos`, `orders`, `directives`); titles and folder names are Russian. The module id is
-`primavtodor`. Documents are plain text files addressed by a single file name inside a section;
-the disk still validates every path. Declared permissions (`disk.read`, `disk.write`,
-`disk.delete`) are metadata until the central permission boundary exists.
+The mutation body is fixed at creation. Lifecycle status may transition only from `pending` to
+one of `applied`, `rejected`, or `stale`.
 
-### Linked records
+The assistant can only create a proposal through `primavtodor_propose_change`.
+For update/delete proposals, creation captures a fingerprint of the current record values and
+timestamp. Approval re-reads that target; if it changed, the proposal becomes `stale` and no
+business write occurs.
 
-`schema.py` is the single source of truth for fields, relations and list columns; the backend
-validates against it and the browser renders forms and tables from `/api/primavtodor/schema`.
+Partial updates are merged with current values and dry-run validated before the proposal is
+stored. Create proposals are also validated before persistence.
 
-```text
-employee (driver) ── vehicle_id ──▶ vehicle              fuel_card_number (unique)
-waybill ── driver_id ──▶ employee, ── vehicle_id ──▶ vehicle
-fuel    ── waybill_id ──▶ waybill   (driver, vehicle, card number derived and stored)
-timesheet = waybills (auto "Я") + manual marks per month
-```
+Only the local human-facing API resolves proposals:
+- `POST /api/proposals/{id}/approve`;
+- `POST /api/proposals/{id}/reject`.
 
-- one JSON file per record in the section folder; all I/O goes through the disk's public API;
-- cross-record rules live in `records.py` (driver flag, closing a waybill, card required for
-  fuel, uniqueness); deleting a referenced record is refused (`409`);
-- computed values (distance, consumption, norm, deviation, amount) are derived on read and never
-  stored, so they cannot go stale; the fuel record keeps the card number it was issued on;
-- the timesheet stores only manual marks (`Табель/<ГГГГ-ММ>.json`);
-- fuel norms are seasonal: a vehicle has `norm_summer` and `norm_winter`; a waybill stores its own
-  `season` and is computed with that season's norm. The module-wide switch
-  (`Примавтодор/settings.json`) only changes the *active* norm shown for vehicles, the default for
-  new waybills and the season of open waybills, never of closed ones (history stays exact);
-- records written by earlier versions are upgraded in memory when read (`RecordStore._upgrade`)
-  and persisted in the new shape the next time they are saved.
+Completed proposals are one-shot and cannot be applied again.
 
 ### Printing, import and reports
 
@@ -108,36 +58,61 @@ every value is written in both halves. The monthly card and the report keep live
 reports what it cannot match and skips what is already on file. Print settings (organisation,
 signers, control wording) live next to the season in `settings.json`.
 
-Note: a failing module start rolls back every module started before it (registry semantics), so a
-file (not a folder) named like a section degrades the whole runtime.
+## Audit
 
-## Диск Yukiyasha
+Audit events live under `system/audit/YYYY-MM-DD/*.json`. Proposal events record proposal id,
+operation, kind and outcome without copying the proposed business payload.
 
-Default root:
+## Memory
 
-```text
-~/.yukiyasha/disk
-```
+Long-term Memory remains separate from chat history under `memory/items/*.json`. Search is local
+lexical retrieval, and Memory mutations still require explicit current-message intent.
 
-Override with `YUKIYASHA_DISK_DIR`.
+## Assistant tool flow
 
-Security and consistency invariants:
-- absolute paths and traversal outside the disk root are rejected;
-- symlink escapes are rejected;
-- replacement writes use a temporary file in the destination directory and `os.replace`;
-- no-overwrite publication uses an atomic hard-link operation;
-- UTF-8 bytes are read/written directly so line endings are never translated by the OS;
-- text API reads/writes are capped at 1 MiB;
-- HTTP request bodies are capped at 2 MiB before application parsing;
-- internal temporary files are recognised by exact name shape, never by prefix alone;
-- built-in project directories are protected by file identity, not by path spelling;
-- the fully resolved path (not only symlink flags) must stay inside the root;
-- deleting the disk root is forbidden;
-- permission, conflict, invalid-path and size failures are represented explicitly.
+For a tool-relevant message:
+1. local routing chooses the tool definitions;
+2. the provider may request standard function calls;
+3. local capability and intent checks run again before execution;
+4. results are audited and masked where appropriate;
+5. the final response is streamed and saved after completion.
 
-Declared permissions remain metadata in v0.3.0:
-- `disk.read`
-- `disk.write`
-- `disk.delete`
+Business tools provide reads plus proposal creation. Memory tools provide search and explicitly
+requested remember/forget operations. The assistant cannot directly apply a business mutation.
 
-The next architecture step is enforcing those declarations through a central permission boundary.
+## Примавтодор
+
+Structured records remain schema-driven and enforce uniqueness, references, seasonal rules and
+delete constraints. `Records.validate()` now provides dry-run normalization for proposal
+creation without mutating storage.
+
+## Web/API boundary
+
+FastAPI retains TrustedHost validation, same-origin protection for mutations, request-size limits,
+security headers, no-store API responses and threadpool execution for synchronous filesystem work.
+
+## Proposal review UI
+
+The assistant view renders proposal cards directly inside the chat panel. Cards show operation,
+target, status, reason and a field-level diff built from the immutable `before` snapshot and
+normalized proposal payload. Pending cards expose approve/reject controls only in that local
+context. Applied/rejected/stale cards remain visible as recent history without action controls.
+
+The review UI is presentation-only: it calls the existing human-facing proposal API and does not
+grant the AI any new capability.
+
+## Document cards
+
+Document discovery is metadata-only for the provider. The assistant can list files in the five
+Примавтодор document sections, and the resulting document refs are persisted on the assistant
+message. The browser renders those refs as mini-document cards with title, section, format and
+size. Text preview is then fetched locally through the existing same-origin Disk API, so preview
+content is not disclosed to the AI provider merely for presentation.
+
+The stored path is an internal navigation locator only; it is not shown as a raw link. Opening a
+card routes into the existing Yukiyasha file editor.
+
+## Next architecture step
+
+Extend the proposal model to timesheet marks and selected document create/update operations, while
+reusing these document cards as the review surface.

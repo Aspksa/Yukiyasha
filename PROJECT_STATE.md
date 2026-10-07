@@ -2,59 +2,67 @@
 
 ## Current release
 
-- Version: **0.3.0**
-- Stage: **Workspace / Примавтодор / AI assistant (first version)**
+- Version: **0.8.0**
+- Stage: **Rich document objects in assistant chat**
 - Status: **released** (see `CHANGELOG.md`)
-- Modules: **Диск Yukiyasha**, **Примавтодор**, **Помощник**
+- Modules: **Диск Yukiyasha**, **Память**, **Примавтодор**, **Предложения**, **Помощник**
 
 ## Implemented
 
-- Module manifest and registry.
-- Lifecycle states including FAILED.
-- Startup rollback and best-effort shutdown of all modules.
-- Runtime degraded mode when module startup fails.
-- Runtime start timestamp set on every actual start.
-- Atomic disk writes and atomic no-overwrite publication.
-- Exact UTF-8/newline preservation.
-- Consistent disk API error mapping: 400/403/404/409/413/500.
-- 1 MiB text limit and 2 MiB HTTP body limit.
-- Stable default disk root under `~/.yukiyasha/disk`.
-- Host and browser Origin validation for the local API.
-- Module Примавтодор: ten sections on the disk; linked records (employees with fuel card + car, vehicles, waybills, fuel) validated against a schema, seasonal (summer/winter) fuel norms with one switch, a timesheet built from waybills, REST API and UI pages. No document templates (orders, memos, offers) yet.
+- Runtime-owned default-deny `PermissionBroker`.
+- Path-scoped `DiskAccess` for Memory, Примавтодор, Proposals and AI.
+- Read-only AI access to Примавтодор and guarded long-term Memory.
+- Proposal / approval boundary for structured Примавтодор mutations:
+  - AI can only call `proposal.create`;
+  - create/update/delete proposals are validated before persistence;
+  - update proposals may be partial and are normalized to a full target state;
+  - update/delete proposals capture a fingerprint of the source record;
+  - approval re-checks the fingerprint and marks changed targets `stale`;
+  - proposal bodies are never rewritten by AI and each proposal is one-shot;
+  - human API endpoints can approve or reject pending proposals;
+  - there is no AI apply/approve/reject capability.
+- Proposal lifecycle statuses: `pending`, `applied`, `rejected`, `stale`.
+- Assistant chat renders proposal cards with old/new diff and in-context approve/reject controls.
+- Audit events for proposal creation and human resolution without proposal payload contents.
+- Long-term Memory with explicit remember/forget gating and credential-like content rejection.
+- Read-only AI tools for Примавтодор records, timesheet, settings and document metadata.
+- Assistant replies persist structured document refs and render them as rich mini-document cards.
+- Document previews are loaded locally in the browser; document contents are not sent to the AI provider just to render cards.
+- Persistent audit log under `system/audit/YYYY-MM-DD/*.json`.
+- Atomic disk writes, sandbox validation, request limits, security headers and same-origin checks.
+- Примавтодор linked records, seasonal fuel norms, timesheet, REST API and UI.
+- Windows launcher and two-tier GitHub Actions CI.
 - Printing and fuel reports (unreleased): waybill form № 3 as the organisation's own .xlsx, fuel-card statement import, monthly fuel card, monthly «Анализ расхода ГСМ». Forms № 3 спец. and № 4-П are not printable yet.
-- AI assistant: streamed chat with any OpenAI-compatible API by the user's own key; persona and conversations on the disk; sees no business data yet.
-- Browser workspace: file browser, text editor, create/delete and system page backed by Yukiyasha Disk.
-- Isolated API tests using temporary disk roots.
-- Windows launcher dependency fingerprinting and safer port fallback.
-- Two-tier GitHub Actions CI with stable `PR Gate`.
 
 ## CI strategy
 
-- Pull requests: Fast quality + Windows launcher + PR Gate.
-- Main/nightly: full Ubuntu + Windows matrix for Python 3.11-3.13.
-- Stale runs are cancelled with concurrency groups.
-- Windows launcher diagnostics install runtime dependencies only once.
+- Pull requests: Ruff + Python tests + JS helper tests + wheel packaging + Windows launcher + PR Gate.
+- Main/nightly: Ubuntu + Windows × Python 3.11-3.13.
+- Merge only after required PR checks are green.
 
-## Invariants
+## Security invariants
 
-- Core does not depend on the web layer.
-- Modules do not depend on the web layer.
-- Disk paths cannot escape the configured sandbox root.
-- Disk writes do not expose partially written replacement files.
-- Tests must not write to the user's real disk root.
-- The package version is sourced from installed package metadata.
-- CI must be green before merging feature work to main.
+- Module-to-module capability access is default-deny.
+- AI cannot mutate Примавтодор directly.
+- AI can only create a validated proposal; only the human-facing API can approve/reject it.
+- Update/delete approval checks that the target did not change since proposal creation.
+- A completed proposal cannot be applied again.
+- Same-origin checks protect proposal approval/rejection endpoints.
+- Proposal audit metadata excludes the proposed business payload.
+- Memory and business tool audit records do not copy disclosed content.
+- Core/modules do not depend on the web layer.
 
 ## Known limitations
 
-- Permission declarations are metadata only; central authorization is not implemented yet.
-- Disk API currently supports UTF-8 text files only.
-- No authentication.
-- Local security assumes binding to loopback; remote serving is not supported yet.
-- The AI assistant has no memory, tools or data access and is verified against a test server only.
+- No authentication; Yukiyasha remains a loopback-only local application.
+- Proposals cover structured records only; document files and timesheet marks are not proposal-enabled.
+- `ai.provider` is declared but provider-network access is not wrapped as its own capability.
+- Audit retention/rotation and an audit viewer UI are not implemented.
+- Memory retrieval is lexical, not semantic/vector-based.
+- Tool support depends on standard OpenAI-compatible `tools`.
 - No deployment configuration yet.
 
 ## Exact next_action
 
-Implement the **permissions boundary**, **data masking** and an **audit log**; then give the assistant
-read-only tools over the Примавтодор data. The assistant proposes, a person decides.
+Extend proposal coverage to **timesheet marks and selected document operations**, reusing the same
+review-card and stale/approval model instead of introducing direct AI writes.

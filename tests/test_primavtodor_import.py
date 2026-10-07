@@ -86,9 +86,17 @@ def test_parse_rejects_what_is_not_a_statement(content: bytes, name: str) -> Non
         parse_statement(content, name)
 
 
-def test_xls_is_read_as_windows_1251(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_xls_is_read_as_windows_1251_and_real_date_cells_are_understood(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xlrd
+
     seen: dict[str, object] = {}
     rows = statement_rows((CARD, [("07.10.2026", "09:00:00", PETROL, 70.0, 10.0)]))
+    operation = next(r for r in rows if r and r[0] == "Отгрузка")
+    # the provider's file may hold a true date and time instead of text
+    operation[1] = xlrd.xldate.xldate_from_date_tuple((2026, 10, 7), 0)
+    operation[2] = xlrd.xldate.xldate_from_time_tuple((9, 17, 16))
 
     class Sheet:
         nrows, ncols = len(rows), 8
@@ -96,7 +104,13 @@ def test_xls_is_read_as_windows_1251(monkeypatch: pytest.MonkeyPatch) -> None:
         def cell_value(self, r: int, c: int):
             return rows[r][c] if c < len(rows[r]) else ""
 
+        def cell_type(self, r: int, c: int) -> int:
+            is_date = rows[r] is operation and c in (1, 2)
+            return xlrd.XL_CELL_DATE if is_date else xlrd.XL_CELL_TEXT
+
     class Book:
+        datemode = 0
+
         def sheet_by_index(self, index: int) -> Sheet:
             return Sheet()
 
@@ -104,13 +118,12 @@ def test_xls_is_read_as_windows_1251(monkeypatch: pytest.MonkeyPatch) -> None:
         seen.update(kwargs)
         return Book()
 
-    import xlrd
-
     monkeypatch.setattr(xlrd, "open_workbook", fake_open)
 
     operations, _ = statement_module.parse_statement(b"binary", "в.XLS")
 
     assert seen["encoding_override"] == "cp1251" and len(operations) == 1
+    assert operations[0].day.isoformat() == "2026-10-07" and operations[0].time == "09:17:16"
 
 
 def test_fuel_type_names() -> None:

@@ -36,6 +36,12 @@ from yukiyasha.modules.disk import (
     DiskSecurityError,
     DiskTooLargeError,
 )
+from yukiyasha.modules.memory import (
+    MemoryError,
+    MemoryLimitError,
+    MemoryNotFoundError,
+    MemoryValidationError,
+)
 from yukiyasha.modules.primavtodor import (
     PrimavtodorError,
     PrintNotAvailableError,
@@ -46,6 +52,12 @@ from yukiyasha.modules.primavtodor import (
     UnknownEntityError,
 )
 from yukiyasha.modules.primavtodor.settings import CONTROL_MODES, PRINT_FIELDS
+from yukiyasha.modules.proposals import (
+    ProposalError,
+    ProposalNotFoundError,
+    ProposalStateError,
+    ProposalValidationError,
+)
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.web.middleware import RequestBodyLimitMiddleware, SecurityHeadersMiddleware
 
@@ -66,6 +78,10 @@ class ChatRequest(BaseModel):
 
 
 class PersonaRequest(BaseModel):
+    text: str
+
+
+class MemoryWriteRequest(BaseModel):
     text: str
 
 
@@ -126,6 +142,30 @@ def primavtodor_http_error(exc: PrimavtodorError | DiskError) -> HTTPException:
         return HTTPException(status_code=404, detail="Unknown record kind")
     if isinstance(exc, DiskError):
         return disk_http_error(exc)
+    return HTTPException(status_code=400, detail=str(exc))
+
+
+def memory_http_error(exc: MemoryError | DiskError) -> HTTPException:
+    """Map memory-domain failures to stable HTTP statuses."""
+    if isinstance(exc, DiskError):
+        return disk_http_error(exc)
+    if isinstance(exc, MemoryNotFoundError):
+        return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, MemoryValidationError):
+        return HTTPException(status_code=422, detail=str(exc))
+    if isinstance(exc, MemoryLimitError):
+        return HTTPException(status_code=409, detail=str(exc))
+    return HTTPException(status_code=400, detail=str(exc))
+
+
+def proposal_http_error(exc: ProposalError) -> HTTPException:
+    """Map proposal lifecycle failures to stable HTTP statuses."""
+    if isinstance(exc, ProposalNotFoundError):
+        return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, ProposalValidationError):
+        return HTTPException(status_code=422, detail=str(exc))
+    if isinstance(exc, ProposalStateError):
+        return HTTPException(status_code=409, detail=str(exc))
     return HTTPException(status_code=400, detail=str(exc))
 
 
@@ -249,6 +289,22 @@ def create_app(
         except (PrimavtodorError, DiskError) as exc:
             raise primavtodor_http_error(exc) from exc
 
+    def memory_call(action: Callable[[], T]) -> T:
+        if runtime.memory.state is not ModuleState.READY:
+            raise HTTPException(status_code=503, detail="Memory module is not ready")
+        try:
+            return action()
+        except (MemoryError, DiskError) as exc:
+            raise memory_http_error(exc) from exc
+
+    def proposal_call(action: Callable[[], T]) -> T:
+        if runtime.proposals.state is not ModuleState.READY:
+            raise HTTPException(status_code=503, detail="Proposal module is not ready")
+        try:
+            return action()
+        except ProposalError as exc:
+            raise proposal_http_error(exc) from exc
+
     def ai_call(action: Callable[[], T]) -> T:
         if runtime.ai.state is not ModuleState.READY:
             raise HTTPException(status_code=503, detail={"message": "Помощник не запущен"})
@@ -256,6 +312,47 @@ def create_app(
             return action()
         except (AiError, DiskError) as exc:
             raise ai_http_error(exc) from exc
+
+    @application.get("/api/memory")
+    def memory_list() -> dict[str, object]:
+        return {"memories": memory_call(runtime.memory.list_items)}
+
+    @application.get("/api/memory/search")
+    def memory_search(q: str, limit: int = Query(default=5, ge=1, le=10)) -> dict[str, object]:
+        return {
+            "memories": memory_call(lambda: runtime.memory.search(q, limit=limit))
+        }
+
+    @application.post("/api/memory", status_code=201)
+    def memory_remember(request: MemoryWriteRequest) -> dict[str, object]:
+        return memory_call(lambda: runtime.memory.remember(request.text))
+
+    @application.delete("/api/memory/{memory_id}")
+    def memory_forget(memory_id: str) -> dict[str, str]:
+        memory_call(lambda: runtime.memory.forget(memory_id))
+        return {"status": "forgotten", "id": memory_id}
+
+    @application.get("/api/proposals")
+    def proposal_list(status: str | None = Query(default=None)) -> dict[str, object]:
+        items = proposal_call(runtime.proposals.list_items)
+        if status is not None:
+            items = [item for item in items if item.get("status") == status]
+        return {"proposals": items}
+
+    @application.get("/api/proposals/{proposal_id}")
+    def proposal_get(proposal_id: str) -> dict[str, object]:
+        return proposal_call(lambda: runtime.proposals.get(proposal_id))
+
+    @application.post("/api/proposals/{proposal_id}/approve")
+    def proposal_approve(proposal_id: str) -> dict[str, object]:
+        proposal = proposal_call(lambda: runtime.proposals.apply(proposal_id))
+        if proposal.get("status") == "stale":
+            raise HTTPException(status_code=409, detail=proposal)
+        return proposal
+
+    @application.post("/api/proposals/{proposal_id}/reject")
+    def proposal_reject(proposal_id: str) -> dict[str, object]:
+        return proposal_call(lambda: runtime.proposals.reject(proposal_id))
 
     @application.get("/api/ai/status")
     def ai_status() -> dict[str, object]:

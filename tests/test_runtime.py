@@ -54,14 +54,18 @@ def test_runtime_registers_primavtodor_after_the_disk_and_creates_its_folder(
     runtime = YukiyashaRuntime(Settings(disk_dir=tmp_path / "disk"))
 
     ids = [snapshot["manifest"]["module_id"] for snapshot in runtime.modules.snapshots()]
-    assert ids == ["disk", "primavtodor", "ai"]  # start order: the disk comes first
+    assert ids == ["disk", "memory", "primavtodor", "proposals", "ai"]  # dependency order
 
     runtime.start()
 
     assert runtime.state is RuntimeState.READY
+    assert runtime.memory.state is ModuleState.READY
     assert runtime.primavtodor.state is ModuleState.READY
+    assert runtime.proposals.state is ModuleState.READY
     assert (tmp_path / "disk" / "projects" / "work" / "Примавтодор" / "Табель").is_dir()
 
     runtime.stop()
+    assert runtime.proposals.state is ModuleState.STOPPED
     assert runtime.primavtodor.state is ModuleState.STOPPED
+    assert runtime.memory.state is ModuleState.STOPPED
     assert runtime.disk.state is ModuleState.STOPPED

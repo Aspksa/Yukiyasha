@@ -28,6 +28,7 @@ from yukiyasha.modules.primavtodor.schema import (
     WAYBILL_FORMS,
 )
 from yukiyasha.modules.primavtodor.sections import (
+    GROUP_DOCUMENTS,
     GROUP_TITLES,
     PRIMAVTODOR_DIR,
     SECTIONS,
@@ -150,10 +151,66 @@ class PrimavtodorModule:
             for section in SECTIONS
         ]
 
+    def _document_section(self, section_id: str) -> Section:
+        section = self.section(section_id)
+        if section.group != GROUP_DOCUMENTS:
+            raise UnknownSectionError(f"Not a document section: {section_id}")
+        return section
+
     def list_documents(self, section_id: str) -> list[dict[str, object]]:
-        return self._disk.list_entries(self.section(section_id).path)
+        return self._disk.list_entries(self._document_section(section_id).path)
+
+    def document_summaries(
+        self, section_id: str, *, limit: int = 10
+    ) -> list[dict[str, object]]:
+        section = self._document_section(section_id)
+        entries = [
+            entry
+            for entry in self._disk.list_entries(section.path)
+            if entry.get("type") == "file"
+        ][: max(1, min(limit, 20))]
+        return [
+            {
+                "section_id": section.id,
+                "section_title": section.title,
+                "name": entry["name"],
+                "path": entry["path"],
+                "size": entry.get("size"),
+                "extension": str(entry["name"]).rsplit(".", 1)[-1].lower()
+                if "." in str(entry["name"])
+                else "",
+            }
+            for entry in entries
+        ]
+
+    def document_preview(
+        self, section_id: str, name: str, *, max_chars: int = 700
+    ) -> dict[str, object]:
+        section = self._document_section(section_id)
+        path = self._document_path(section_id, name)
+        entries = {
+            str(entry["name"]): entry
+            for entry in self._disk.list_entries(section.path)
+            if entry.get("type") == "file"
+        }
+        entry = entries.get(name)
+        if entry is None:
+            raise FileNotFoundError(path)
+        content = self._disk.read_text(path)
+        compact = " ".join(content.split())
+        return {
+            "section_id": section.id,
+            "section_title": section.title,
+            "name": name,
+            "path": path,
+            "size": entry.get("size"),
+            "extension": name.rsplit(".", 1)[-1].lower() if "." in name else "",
+            "preview": compact[: max(80, min(max_chars, 1200))],
+            "truncated": len(compact) > max_chars,
+        }
 
     def read_document(self, section_id: str, name: str) -> str:
+        self._document_section(section_id)
         return self._disk.read_text(self._document_path(section_id, name))
 
     def write_document(

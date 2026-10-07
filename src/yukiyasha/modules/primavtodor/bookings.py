@@ -129,6 +129,13 @@ class Bookings:
     def delete(self, record_id: str) -> None:
         self._store.delete(record_id)
 
+    def references(self, kind: str, record_id: str) -> list[str]:
+        """Bookings that stop a car or a driver from being deleted."""
+        key = {KIND_VEHICLES: "vehicle_id", KIND_EMPLOYEES: "driver_id"}.get(kind)
+        if key is None:
+            return []
+        return [f"выезд {self._span(r)}" for r in self._all() if r.get(key) == record_id]
+
     # ----- views -----
 
     @staticmethod

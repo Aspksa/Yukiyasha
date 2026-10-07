@@ -72,6 +72,7 @@ class PrimavtodorModule:
         self.data = Records(disk, self.settings)  # employees, vehicles, waybills, fuel
         self.timesheet = Timesheet(disk, self.data)
         self.bookings = Bookings(disk, self.data, self.timesheet)
+        self.data.extra_references = self.bookings.references
         self._state = ModuleState.REGISTERED
         self._last_error: str | None = None
 

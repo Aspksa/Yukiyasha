@@ -87,8 +87,12 @@ class Timesheet:
         while (year, number) <= (last.year, last.month):
             for employee_id, days in self._load_marks(f"{year:04d}-{number:02d}").items():
                 for day, code in days.items():
-                    if code in ABSENCE_CODES:
+                    if code not in ABSENCE_CODES:
+                        continue
+                    try:
                         marked[(employee_id, code)].append(date.fromisoformat(day))
+                    except ValueError:
+                        continue  # a hand-edited marks file must not break the page
             year, number = (year + 1, 1) if number == 12 else (year, number + 1)
         runs: list[dict[str, str]] = []
         for (employee_id, code), days in marked.items():

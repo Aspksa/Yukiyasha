@@ -4,6 +4,12 @@ All notable changes to Yukiyasha are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- A car or driver with bookings in the schedule can no longer be deleted (the booking would have
+  vanished from the grid); a hand-edited timesheet file with a broken date no longer breaks the
+  schedule; two statement scans at once no longer fail on moving the same file; a month above 12
+  in a quick line («7.13») is not read as January.
+
 ### Added
 - **График машин, second pass:** bookings can be dragged to other days or another car and
   stretched by their edges (a conflict is flagged, never refused); gradient bars with the driver's

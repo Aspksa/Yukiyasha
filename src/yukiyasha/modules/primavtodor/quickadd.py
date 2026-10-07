@@ -77,6 +77,8 @@ def _dates(text: str, today: date) -> tuple[date | None, date | None, str]:
         last_day, last_month = first_day, first_month
     rest = text[: match.start()] + " " + text[match.end() :]
 
+    if any(m and not 1 <= int(m) <= 12 for m in (first_month, last_month)):
+        return None, None, rest
     month = int(first_month) if first_month else today.month
     start = _safe(today.year, month, first_day)
     if start is None:

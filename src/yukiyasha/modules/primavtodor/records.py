@@ -10,6 +10,7 @@ import json
 import math
 import re
 import uuid
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 
 from yukiyasha.modules.disk import DiskConflictError, DiskError, DiskModule
@@ -291,6 +292,8 @@ class Records:
     def __init__(self, disk: DiskModule, settings: ModuleSettings | None = None) -> None:
         self.settings = settings or ModuleSettings(disk)
         self._stores = {kind: RecordStore(disk, entity) for kind, entity in ENTITIES.items()}
+        # other parts of the module (the vehicle schedule) can veto a delete: (kind, id) -> labels
+        self.extra_references: Callable[[str, str], list[str]] | None = None
 
     def _ctx(self) -> _Ctx:
         return _Ctx(self._stores, self.settings)
@@ -692,6 +695,8 @@ class Records:
             for fuel in ctx.all(KIND_FUEL).values():
                 if fuel.get("waybill_id") == record_id:
                     found.append(f"заправка {format_date(fuel.get('date'))}")
+        if self.extra_references is not None:
+            found.extend(self.extra_references(kind, record_id))
         return found
 
     # ----- presentation -----

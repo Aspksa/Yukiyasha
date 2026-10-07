@@ -112,7 +112,7 @@ def scan(
             item["status"] = "loaded"
             try:
                 disk.move(path, f"{done_dir()}/{_free_name(disk, name)}")
-            except DiskError as exc:
+            except (DiskError, OSError) as exc:  # e.g. a second scan moved it first
                 item["message"] = f"Загружено, но файл не перенесён: {exc}"
         results.append(item)
     return {

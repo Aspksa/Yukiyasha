@@ -207,3 +207,35 @@ def test_tomorrow_service_and_conflict_preview(module, crew) -> None:
 
     service = module.bookings.parse("хино 12-13 ремонт", TODAY)
     assert service["ok"] and service["values"]["kind"] == "service"
+
+
+def test_a_car_or_driver_with_bookings_cannot_be_deleted(module: PrimavtodorModule) -> None:
+    from yukiyasha.modules.primavtodor import RecordInUseError
+
+    car = make_vehicle(module, plate="Х1", model="Hino")
+    driver = make_driver(module, car["id"])
+    created = book(module, car, driver, "2026-10-07", "2026-10-09")
+
+    for kind, record in (("vehicles", car), ("employees", driver)):
+        with pytest.raises(RecordInUseError) as raised:
+            module.data.delete(kind, record["id"])
+        assert any("выезд" in text for text in raised.value.references)
+
+    module.bookings.delete(created["id"])
+    module.data.delete("employees", driver["id"])  # nothing holds it any more
+
+
+def test_a_broken_date_in_the_timesheet_file_does_not_break_the_schedule(
+    module: PrimavtodorModule,
+) -> None:
+    car = make_vehicle(module, plate="Х1", model="Hino")
+    driver = make_driver(module, car["id"])
+    path = module._disk.root / "projects/work/Примавтодор/Табель/2026-10.json"
+    path.write_text(
+        '{"month": "2026-10", "marks": {"%s": {"не-дата": "Б", "2026-10-08": "Б"}}}' % driver["id"],
+        encoding="utf-8",
+    )
+
+    view = module.bookings.overview(date(2026, 10, 5), 7, date(2026, 10, 8))
+
+    assert [a["name"] for a in view["absent_now"]] == [driver["values"]["full_name"]]

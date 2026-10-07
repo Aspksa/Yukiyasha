@@ -22,9 +22,9 @@ class RuntimeSnapshot:
     version: str
     environment: str
     state: RuntimeState
-    started_at: str
+    started_at: str | None
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, str | None]:
         payload = asdict(self)
         payload["state"] = self.state.value
         return payload
@@ -35,8 +35,8 @@ class YukiyashaRuntime:
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or Settings.from_env()
-        self._started_at = datetime.now(UTC)
-        self._state = RuntimeState.STARTING
+        self._started_at: datetime | None = None
+        self._state = RuntimeState.STOPPED
         self.modules = ModuleRegistry()
         self.disk = DiskModule(self.settings.disk_dir)
         self.modules.register(self.disk)
@@ -46,15 +46,21 @@ class YukiyashaRuntime:
         return self._state
 
     def start(self) -> None:
+        self._state = RuntimeState.STARTING
+        self._started_at = datetime.now(UTC)
         try:
             self.modules.start_all()
         except Exception:
             self._state = RuntimeState.DEGRADED
-            raise
+            return
         self._state = RuntimeState.READY
 
     def stop(self) -> None:
-        self.modules.stop_all()
+        try:
+            self.modules.stop_all()
+        except Exception:
+            self._state = RuntimeState.DEGRADED
+            raise
         self._state = RuntimeState.STOPPED
 
     def snapshot(self) -> RuntimeSnapshot:
@@ -63,5 +69,5 @@ class YukiyashaRuntime:
             version=self.settings.version,
             environment=self.settings.environment,
             state=self._state,
-            started_at=self._started_at.isoformat(),
+            started_at=self._started_at.isoformat() if self._started_at else None,
         )

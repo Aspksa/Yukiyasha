@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul
 title Yukiyasha — launcher
 
@@ -7,6 +7,7 @@ cd /d "%~dp0"
 
 set "VENV_DIR=.venv"
 set "PYTHON_EXE=%VENV_DIR%\Scripts\python.exe"
+set "DEPS_MARKER=%VENV_DIR%\.yukiyasha-deps.sha256"
 set "HOST=127.0.0.1"
 set "DEFAULT_PORT=8000"
 set "MAX_PORT=8010"
@@ -103,16 +104,15 @@ exit /b %EXIT_CODE%
 :check_python
 echo [1/5] Проверка Python...
 where py >nul 2>&1
-if not errorlevel 1 (
-    for /f "tokens=*" %%V in ('py -3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2^>nul') do set "SYSTEM_PY_VERSION=%%V"
-    py -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)" >nul 2>&1
-    if not errorlevel 1 (
-        set "PY_LAUNCHER=py -3"
-        echo [OK] Python !SYSTEM_PY_VERSION!
-        exit /b 0
-    )
-)
+if errorlevel 1 goto :try_python
+py -3 -c "import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)" >nul 2>&1
+if errorlevel 1 goto :try_python
+for /f "tokens=*" %%V in ('py -3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2^>nul') do set "SYSTEM_PY_VERSION=%%V"
+set "PY_LAUNCHER=py -3"
+echo [OK] Python %SYSTEM_PY_VERSION%
+exit /b 0
 
+:try_python
 where python >nul 2>&1
 if errorlevel 1 (
     echo [ОШИБКА] Python не найден.
@@ -120,16 +120,14 @@ if errorlevel 1 (
     echo Скачать: https://www.python.org/downloads/
     exit /b 1
 )
-
-for /f "tokens=*" %%V in ('python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2^>nul') do set "SYSTEM_PY_VERSION=%%V"
 python -c "import sys; raise SystemExit(0 if sys.version_info >= (3,11) else 1)" >nul 2>&1
 if errorlevel 1 (
-    echo [ОШИБКА] Найден Python !SYSTEM_PY_VERSION!, но нужен Python 3.11 или новее.
+    echo [ОШИБКА] Нужен Python 3.11 или новее.
     exit /b 1
 )
-
+for /f "tokens=*" %%V in ('python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2^>nul') do set "SYSTEM_PY_VERSION=%%V"
 set "PY_LAUNCHER=python"
-echo [OK] Python !SYSTEM_PY_VERSION!
+echo [OK] Python %SYSTEM_PY_VERSION%
 exit /b 0
 
 :ensure_venv
@@ -161,27 +159,40 @@ exit /b 0
 
 :ensure_dependencies
 echo [4/5] Проверка зависимостей...
-"%PYTHON_EXE%" -c "import fastapi, uvicorn, yukiyasha" >nul 2>&1
-if not errorlevel 1 (
-    echo [OK] Зависимости установлены.
-    exit /b 0
+for /f "usebackq delims=" %%H in (`powershell -NoProfile -Command "(Get-FileHash -Algorithm SHA256 'pyproject.toml').Hash"`) do set "CURRENT_DEPS_HASH=%%H"
+if not defined CURRENT_DEPS_HASH (
+    echo [ОШИБКА] Не удалось вычислить контрольную сумму pyproject.toml.
+    exit /b 1
 )
 
-echo [Yukiyasha] Устанавливаю зависимости проекта...
+if /I "%YUKIYASHA_SKIP_INSTALL%"=="1" goto :verify_dependencies
+
+set "SAVED_DEPS_HASH="
+if exist "%DEPS_MARKER%" set /p SAVED_DEPS_HASH=<"%DEPS_MARKER%"
+if /I "%SAVED_DEPS_HASH%"=="%CURRENT_DEPS_HASH%" goto :verify_dependencies
+
+:install_dependencies
+echo [Yukiyasha] Конфигурация зависимостей изменилась. Обновляю среду...
 "%PYTHON_EXE%" -m pip install -e .
 if errorlevel 1 (
     echo [ОШИБКА] Не удалось установить зависимости.
     echo Проверьте подключение к интернету и доступ к PyPI.
     exit /b 1
 )
+>"%DEPS_MARKER%" echo %CURRENT_DEPS_HASH%
 
-"%PYTHON_EXE%" -c "import fastapi, uvicorn, yukiyasha" >nul 2>&1
+:verify_dependencies
+"%PYTHON_EXE%" -c "import fastapi, uvicorn, yukiyasha; from importlib.metadata import version; version('yukiyasha')" >nul 2>&1
 if errorlevel 1 (
-    echo [ОШИБКА] Установка завершилась, но импорт зависимостей не проходит.
-    exit /b 1
+    if /I "%YUKIYASHA_SKIP_INSTALL%"=="1" (
+        echo [ОШИБКА] Предустановленные зависимости неполны.
+        exit /b 1
+    )
+    goto :install_dependencies
 )
 
-echo [OK] Зависимости готовы.
+if not exist "%DEPS_MARKER%" >"%DEPS_MARKER%" echo %CURRENT_DEPS_HASH%
+echo [OK] Зависимости соответствуют pyproject.toml.
 exit /b 0
 
 :select_port
@@ -199,22 +210,22 @@ if errorlevel 1 (
 set /a CURRENT_PORT=%PORT%
 
 :port_loop
-call :is_port_busy !CURRENT_PORT!
+call :is_port_busy %CURRENT_PORT%
 if errorlevel 1 (
-    set "PORT=!CURRENT_PORT!"
-    echo [OK] Порт !PORT! свободен.
+    set "PORT=%CURRENT_PORT%"
+    echo [OK] Порт %CURRENT_PORT% свободен.
     exit /b 0
 )
 
-call :is_yukiyasha !CURRENT_PORT!
+call :is_yukiyasha %CURRENT_PORT%
 if not errorlevel 1 (
-    set "PORT=!CURRENT_PORT!"
+    set "PORT=%CURRENT_PORT%"
     set "ALREADY_RUNNING=1"
-    echo [OK] Найден уже запущенный Yukiyasha на порту !PORT!.
+    echo [OK] Найден уже запущенный Yukiyasha на порту %CURRENT_PORT%.
     exit /b 0
 )
 
-echo [Yukiyasha] Порт !CURRENT_PORT! занят другим процессом.
+echo [Yukiyasha] Порт %CURRENT_PORT% занят другим процессом.
 
 if "%FIXED_PORT%"=="1" (
     echo [ОШИБКА] Выбранный фиксированный порт недоступен.
@@ -222,7 +233,7 @@ if "%FIXED_PORT%"=="1" (
 )
 
 set /a CURRENT_PORT+=1
-if !CURRENT_PORT! GTR %MAX_PORT% (
+if %CURRENT_PORT% GTR %MAX_PORT% (
     echo [ОШИБКА] Нет свободного порта в диапазоне %DEFAULT_PORT%-%MAX_PORT%.
     echo Освободите один из портов или задайте порт вручную:
     echo   Yukiyasha.bat 8090
@@ -235,7 +246,7 @@ set "CHECK_PORT=%~1"
 powershell -NoProfile -Command ^
   "$p=%CHECK_PORT%; $busy=$false;" ^
   "try{$busy=[bool](Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction Stop)}catch{" ^
-  "  $busy=[bool](netstat -ano -p tcp ^| Select-String (':'+$p+'\s+.*LISTENING'))" ^
+  "  $busy=[bool]((& netstat -ano -p tcp) -match (':'+$p+'\s+.*LISTENING'))" ^
   "}; if($busy){exit 0}else{exit 1}" >nul 2>&1
 exit /b %ERRORLEVEL%
 

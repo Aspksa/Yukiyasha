@@ -2,25 +2,27 @@
 
 ## Current release
 
-- Version: **0.2.0**
-- Stage: **Module Runtime / First Module**
+- Version: **0.2.1**
+- Stage: **Module Runtime / Hardening**
 - Status: **release candidate**
 - First module: **Диск Yukiyasha**
 
 ## Implemented
 
-- Python application runtime.
-- Module manifest model.
-- Module registry with duplicate protection.
-- Module lifecycle: registered -> ready -> stopped.
-- Module health snapshots.
-- First module: sandboxed local Yukiyasha Disk.
-- Disk read/write/list/delete operations.
-- Path traversal and absolute-path protection.
-- 1 MiB text file safety limit.
-- FastAPI module and disk endpoints.
-- Configurable disk root through `YUKIYASHA_DISK_DIR`.
-- Unit/API tests.
+- Module manifest and registry.
+- Lifecycle states including FAILED.
+- Startup rollback and best-effort shutdown of all modules.
+- Runtime degraded mode when module startup fails.
+- Runtime start timestamp set on every actual start.
+- Atomic disk writes and atomic no-overwrite publication.
+- Exact UTF-8/newline preservation.
+- Consistent disk API error mapping: 400/403/404/409/413/500.
+- 1 MiB text limit and 2 MiB HTTP body limit.
+- Stable default disk root under `~/.yukiyasha/disk`.
+- Host and browser Origin validation for the local API.
+- Work/home project browser backed by Yukiyasha Disk.
+- Isolated API tests using temporary disk roots.
+- Windows launcher dependency fingerprinting and safer port fallback.
 - Two-tier GitHub Actions CI with stable `PR Gate`.
 
 ## CI strategy
@@ -28,27 +30,29 @@
 - Pull requests: Fast quality + Windows launcher + PR Gate.
 - Main/nightly: full Ubuntu + Windows matrix for Python 3.11-3.13.
 - Stale runs are cancelled with concurrency groups.
-- Feature-branch push checks are intentionally removed to avoid duplicate PR runs.
+- Windows launcher diagnostics install runtime dependencies only once.
 
 ## Invariants
 
 - Core does not depend on the web layer.
 - Modules do not depend on the web layer.
 - Disk paths cannot escape the configured sandbox root.
-- Browser/API state is derived from runtime/module state.
-- The canonical release version is 0.2.0.
+- Disk writes do not expose partially written replacement files.
+- Tests must not write to the user's real disk root.
+- The package version is sourced from installed package metadata.
 - CI must be green before merging feature work to main.
 
 ## Known limitations
 
-- Permission declarations exist, but central runtime authorization is not implemented yet.
+- Permission declarations are metadata only; central authorization is not implemented yet.
 - Disk API currently supports UTF-8 text files only.
 - No authentication.
+- Local security assumes binding to loopback; remote serving is not supported yet.
 - No LLM/provider integration.
 - No memory module.
 - No deployment configuration yet.
 
 ## Exact next_action
 
-Build the **permissions boundary** around module operations, then add a browser UI for
-Диск Yukiyasha and use the disk as the persistence base for the future Memory module.
+Implement the **permissions boundary** so declared module permissions become enforced runtime
+capabilities before storing valuable user data or adding additional modules.

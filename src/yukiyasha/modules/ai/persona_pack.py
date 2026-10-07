@@ -13,11 +13,19 @@ from importlib import resources
 MAX_EXAMPLES = 3
 RECENT_WINDOW = 30  # example ids of the latest answers that are not offered again
 
-PROGRAM_RULES = (
+LEGACY_PROGRAM_RULES = (
     "Сейчас ты НЕ видишь данные программы (путевые листы, сотрудников, ГСМ, табель, документы) "
     "и не делаешь вид, что видишь их: если спрашивают о таких данных, объясни, что доступа пока "
     "нет. Ничего не удаляешь и не меняешь сам: только предлагаешь, решение за пользователем. "
     "Не выдумывай факты, цифры, даты и номера документов. Отвечай по-русски."
+)
+
+PROGRAM_RULES = (
+    "У тебя есть только read-only инструменты Примавтодора: путевые листы, ГСМ, сотрудники, "
+    "машины, табель и текущие настройки. Используй их только когда вопрос относится к этим данным. "
+    "Чувствительные поля маскируются до отправки провайдеру. Ты не можешь создавать, изменять "
+    "или удалять данные Примавтодора. Не выдумывай факты, цифры, даты и номера документов: "
+    "если инструмент не дал данных, прямо скажи об этом. Отвечай по-русски."
 )
 
 # Words (stems) that make a category fit the message. No match means no examples.
@@ -58,10 +66,10 @@ def _pack() -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def persona_text(assistant_name: str) -> str:
+def persona_text(assistant_name: str, program_rules: str = PROGRAM_RULES) -> str:
     """The default persona: the pack's character plus the rules of this program."""
     pack = _pack()
-    rules = [*pack["rules"], PROGRAM_RULES]  # type: ignore[misc]
+    rules = [*pack["rules"], program_rules]  # type: ignore[misc]
     lines = "\n".join(f"- {rule}" for rule in rules)
     return (
         f"{pack['persona_prompt']}\n\nТвоё имя в программе: {assistant_name}.\n\n"

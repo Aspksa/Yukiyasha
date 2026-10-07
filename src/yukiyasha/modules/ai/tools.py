@@ -147,11 +147,11 @@ class AiToolRegistry:
     def _audit_metadata(
         self, name: str, arguments: dict[str, object]
     ) -> dict[str, object]:
-        allowed = {"kind", "record_id", "month", "employee_id", "limit", "memory_id"}
+        allowed = {"kind", "record_id", "month", "employee_id", "limit"}
         metadata = {key: value for key, value in arguments.items() if key in allowed}
         if name == "memory_remember":
             metadata["content_stored"] = True
-        if name == "memory_search":
+        if name in {"memory_search", "memory_forget"}:
             metadata["query_logged"] = False
         return metadata
 
@@ -288,8 +288,8 @@ class AiToolRegistry:
                 ),
                 "parameters": {
                     "type": "object",
-                    "properties": {"memory_id": {"type": "string"}},
-                    "required": ["memory_id"],
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
                     "additionalProperties": False,
                 },
             },
@@ -361,10 +361,13 @@ class AiToolRegistry:
 
     def _memory_remember(self, arguments: dict[str, object]) -> dict[str, object]:
         assert self._memory is not None
-        return self._memory.remember(str(arguments.get("text", "")))
+        item = self._memory.remember(str(arguments.get("text", "")))
+        return {"status": "remembered", "id": item["id"]}
 
     def _memory_forget(self, arguments: dict[str, object]) -> dict[str, object]:
         assert self._memory is not None
-        memory_id = str(arguments.get("memory_id", ""))
-        self._memory.forget(memory_id)
+        query = str(arguments.get("query", "")).strip()
+        if not query:
+            raise ValueError("Пустой запрос на удаление памяти")
+        memory_id = self._memory.forget_matching(query)
         return {"status": "forgotten", "id": memory_id}

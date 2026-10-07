@@ -216,7 +216,12 @@ class DiskModule:
                 except FileExistsError as exc:
                     raise DiskConflictError("File already exists") from exc
                 except OSError as exc:
-                    unsupported = {errno.EPERM, errno.EXDEV, getattr(errno, "ENOTSUP", -1), getattr(errno, "EOPNOTSUPP", -1)}
+                    unsupported = {
+                        errno.EPERM,
+                        errno.EXDEV,
+                        getattr(errno, "ENOTSUP", -1),
+                        getattr(errno, "EOPNOTSUPP", -1),
+                    }
                     if exc.errno not in unsupported:
                         raise
                     fd2 = None

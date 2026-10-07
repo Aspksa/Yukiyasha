@@ -1,7 +1,7 @@
 """Application configuration."""
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)

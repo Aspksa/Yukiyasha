@@ -1,6 +1,6 @@
 # Yukiyasha Architecture
 
-## v0.5.0 — permissioned modular monolith with long-term memory
+## v0.6.0 — modular monolith with human-approved proposals
 
 ```text
 Browser -> Web/API -> Core Runtime -> Module Registry -> Modules
@@ -11,99 +11,77 @@ Browser -> Web/API -> Core Runtime -> Module Registry -> Modules
 
 Core and modules do not import the Web/API layer.
 
-## Runtime and capability boundary
+## Runtime and capabilities
 
-The runtime owns a default-deny `PermissionBroker`. Module manifests declare capabilities and
-runtime composition supplies scoped facades rather than raw dependencies.
+The runtime owns a default-deny `PermissionBroker`. Modules receive scoped facades instead of
+raw dependencies.
 
 Current scopes:
-- `memory` receives `disk.read/write/delete` only under `memory/**`;
-- `primavtodor` receives `disk.read/write/delete` only under
-  `projects/work/Примавтодор/**`;
-- `ai` receives `disk.read/write/delete` only under `ai/**`;
-- `ai` additionally receives `primavtodor.read` and `memory.read/write/delete`.
+- `memory`: disk access under `memory/**`;
+- `primavtodor`: disk access under `projects/work/Примавтодор/**`;
+- `proposals`: disk access under `proposals/**` plus controlled Примавтодор mutation access;
+- `ai`: disk access under `ai/**`, read-only Примавтодор access, Memory access, and
+  `proposal.create`.
 
-`PrimavtodorReadAccess` exposes only read operations. `MemoryAccess` exposes search, remember
-and forget, each guarded by its own permission.
+The AI module is not granted direct Примавтодор mutation capability and has no proposal
+approve/reject capability.
+
+## Proposal lifecycle
+
+Proposal files live under `proposals/items/*.json`.
+
+The mutation body is fixed at creation. Lifecycle status may transition only from `pending` to
+one of `applied`, `rejected`, or `stale`.
+
+The assistant can only create a proposal through `primavtodor_propose_change`.
+For update/delete proposals, creation captures a fingerprint of the current record values and
+timestamp. Approval re-reads that target; if it changed, the proposal becomes `stale` and no
+business write occurs.
+
+Partial updates are merged with current values and dry-run validated before the proposal is
+stored. Create proposals are also validated before persistence.
+
+Only the local human-facing API resolves proposals:
+- `POST /api/proposals/{id}/approve`;
+- `POST /api/proposals/{id}/reject`.
+
+Completed proposals are one-shot and cannot be applied again.
 
 ## Audit
 
-`AuditLog` writes one JSON event per guarded AI tool action under:
+Audit events live under `system/audit/YYYY-MM-DD/*.json`. Proposal events record proposal id,
+operation, kind and outcome without copying the proposed business payload.
 
-```text
-system/audit/YYYY-MM-DD/<timestamp>-<id>.json
-```
+## Memory
 
-Business payloads, memory text and memory search queries are not copied into audit records.
-For business reads, disclosure is fail-closed: the result is returned only after its audit event
-has been persisted.
-
-## Memory module
-
-Long-term memory is separate from chat history:
-
-```text
-memory/
-  items/
-    mem-<id>.json
-```
-
-Each item contains a stable id, text and timestamps. The module:
-- normalizes whitespace and deduplicates exact text;
-- caps each item at 2,000 characters and the store at 500 items;
-- uses local token-overlap ranking for retrieval;
-- rejects credential-like material before persistence;
-- exposes direct list/search/add/delete HTTP endpoints for transparent management.
-
-The assistant does not silently mine all conversations. Tool routing is lexical and only considers
-memory tools for messages that look like recall/preference or explicit remember/forget requests.
-`memory_remember` and `memory_forget` are not even advertised to the provider unless the current
-message contains explicit matching intent, and execution re-checks that intent locally.
+Long-term Memory remains separate from chat history under `memory/items/*.json`. Search is local
+lexical retrieval, and Memory mutations still require explicit current-message intent.
 
 ## Assistant tool flow
 
-For an ordinary chat, the assistant streams the final provider response directly.
+For a tool-relevant message:
+1. local routing chooses the tool definitions;
+2. the provider may request standard function calls;
+3. local capability and intent checks run again before execution;
+4. results are audited and masked where appropriate;
+5. the final response is streamed and saved after completion.
 
-For a message that may need a tool:
-1. local routing chooses the relevant tool family;
-2. a standard OpenAI-compatible non-streaming tool-planning request is made;
-3. at most four calls are accepted from the provider;
-4. local permission and intent checks run;
-5. results are masked/audited as appropriate;
-6. tool result messages are returned to the provider;
-7. the final answer is streamed and saved only after completion.
-
-Current tools:
-- `primavtodor_list_records`;
-- `primavtodor_get_record`;
-- `primavtodor_timesheet`;
-- `primavtodor_settings`;
-- `memory_search`;
-- `memory_remember` — explicit user request required;
-- `memory_forget` — explicit user request required.
-
-There is still no Примавтодор write tool.
+Business tools provide reads plus proposal creation. Memory tools provide search and explicitly
+requested remember/forget operations. The assistant cannot directly apply a business mutation.
 
 ## Примавтодор
 
-Примавтодор owns `projects/work/Примавтодор`. Existing schema, reference integrity, seasonal
-fuel norms, timesheet derivation and immutable historical calculations remain unchanged. The AI
-sees it only through the read-only facade.
+Structured records remain schema-driven and enforce uniqueness, references, seasonal rules and
+delete constraints. `Records.validate()` now provides dry-run normalization for proposal
+creation without mutating storage.
 
-## Disk and Web/API boundaries
+## Web/API boundary
 
-Disk invariants remain:
-- no absolute/traversal/symlink escape;
-- atomic writes and race-safe no-overwrite;
-- exact UTF-8 bytes/newlines;
-- built-in directories protected;
-- 1 MiB text limit.
-
-FastAPI retains TrustedHost, same-origin mutation protection, 2 MiB body limit, security headers,
-no-store API responses and threadpool execution for synchronous filesystem work.
+FastAPI retains TrustedHost validation, same-origin protection for mutations, request-size limits,
+security headers, no-store API responses and threadpool execution for synchronous filesystem work.
 
 ## Next architecture step
 
-Add a **proposal/approval boundary** for AI-assisted Примавтодор writes. A proposed mutation must
-be stored as a concrete immutable proposal and cannot execute until the user explicitly approves
-that exact proposal.
+Add an in-context proposal review surface to the assistant/workspace: show the concrete diff,
+status and stale reason, with approve/reject controls only inside the proposal context rather than
+as global navigation actions.

@@ -101,3 +101,23 @@ def test_free_cars_and_drivers_on_a_day(module: PrimavtodorModule) -> None:
     }
     assert later["free"]["drivers"][0]["next"] == "2026-10-12"
     assert spare["id"] in {v["id"] for v in later["free"]["vehicles"]}
+
+
+def test_timesheet_leave_and_sick_days_take_the_driver_off_the_list(
+    module: PrimavtodorModule,
+) -> None:
+    car = make_vehicle(module, plate="Х1", model="Hino")
+    sick = make_driver(module, car["id"])
+    for day in ("2026-10-07", "2026-10-08", "2026-10-09"):
+        module.timesheet.set_mark("2026-10", sick["id"], day, "Б")
+
+    view = module.bookings.overview(date(2026, 10, 5), 7, date(2026, 10, 8))
+    assert view["free"]["drivers"] == [] and view["free"]["absent_total"] == 1
+    assert view["absent_now"][0]["label"] == "на больничном"
+    assert view["absent_now"][0]["date_to"] == "2026-10-09"
+
+    booked = book(module, car, sick, "2026-10-09", "2026-10-10")
+    assert any("больничном" in text for text in booked["conflicts"])  # warned, not forbidden
+
+    back = module.bookings.overview(date(2026, 10, 5), 7, date(2026, 10, 8), date(2026, 10, 11))
+    assert len(back["free"]["drivers"]) == 1  # leave is over, the trip is over

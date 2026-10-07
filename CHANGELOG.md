@@ -14,7 +14,8 @@ All notable changes to Yukiyasha are documented here.
   chosen dates. Counters show trips under way and how many cars and drivers are free, and a
   **«Кто свободен»** panel lists the cars and drivers without work on a chosen day (today,
   tomorrow or any date, or click a day in the grid) with how long each stays free; a click on a
-  card starts a booking for them. API: `/api/primavtodor/bookings`.
+  card starts a booking for them. The schedule reads the timesheet: a driver marked *Б* (sick) or *ОТ* (leave) is not offered as free, appears in a «Табель» strip with the end date, and a booking over such days is flagged.
+  API: `/api/primavtodor/bookings`.
 - **Cars and cards move between drivers, the history is kept in the employee.** Change a
   driver's car or fuel card at any time (today the Hino, tomorrow the Lexus; a lost card is
   detached and another attached) with an optional *Смена … действует с* date; the employee shows

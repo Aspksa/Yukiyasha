@@ -31,6 +31,7 @@ CODE_VALUES = {code for code, _ in CODES}
 AUTO_CODE = "Я"
 OFF_DAY_CODE = "РВ"  # a waybill on a weekend or a holiday
 WORKED_CODES = {AUTO_CODE, OFF_DAY_CODE}
+ABSENCE_CODES = {"ОТ", "Б"}  # the driver cannot take a car
 
 
 class Timesheet:
@@ -78,6 +79,37 @@ class Timesheet:
                 if clean:
                     marks[str(employee_id)] = clean
         return marks
+
+    def absences(self, first: date, last: date) -> list[dict[str, str]]:
+        """Runs of sick leave and leave marked by hand in the timesheet."""
+        marked: dict[tuple[str, str], list[date]] = defaultdict(list)
+        year, number = first.year, first.month
+        while (year, number) <= (last.year, last.month):
+            for employee_id, days in self._load_marks(f"{year:04d}-{number:02d}").items():
+                for day, code in days.items():
+                    if code in ABSENCE_CODES:
+                        marked[(employee_id, code)].append(date.fromisoformat(day))
+            year, number = (year + 1, 1) if number == 12 else (year, number + 1)
+        runs: list[dict[str, str]] = []
+        for (employee_id, code), days in marked.items():
+            days.sort()
+            start = previous = days[0]
+            for day in [*days[1:], None]:
+                if day is not None and (day - previous).days == 1:
+                    previous = day
+                    continue
+                if previous >= first and start <= last:
+                    runs.append(
+                        {
+                            "employee_id": employee_id,
+                            "code": code,
+                            "date_from": start.isoformat(),
+                            "date_to": previous.isoformat(),
+                        }
+                    )
+                if day is not None:
+                    start = previous = day
+        return runs
 
     # ----- public API -----
 

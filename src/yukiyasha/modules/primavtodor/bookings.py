@@ -22,6 +22,7 @@ from yukiyasha.modules.primavtodor.schema import (
     KIND_VEHICLES,
     Entity,
 )
+from yukiyasha.modules.primavtodor.timesheet import Timesheet
 
 KIND_BOOKINGS = "bookings"
 BOOKING_KINDS = (
@@ -30,6 +31,8 @@ BOOKING_KINDS = (
     ("service", "Ремонт / ТО"),
 )
 _KIND_LABELS = dict(BOOKING_KINDS)
+ABSENCE_LABELS = {"Б": "на больничном", "ОТ": "в отпуске"}
+PADDING_DAYS = 45  # look this far past the window to say when a leave ends
 MAX_WINDOW_DAYS = 62
 MAX_NOTE = 200
 
@@ -57,9 +60,10 @@ def _day(raw: object, name: str, errors: dict[str, str]) -> date | None:
 
 
 class Bookings:
-    def __init__(self, disk: DiskModule, data: Records) -> None:
+    def __init__(self, disk: DiskModule, data: Records, timesheet: Timesheet) -> None:
         self._store = RecordStore(disk, _ENTITY)
         self._data = data
+        self._timesheet = timesheet
 
     # ----- storage -----
 
@@ -132,7 +136,10 @@ class Bookings:
         return str(a["date_from"]) <= str(b["date_to"]) and str(b["date_from"]) <= str(a["date_to"])
 
     def _conflicts(
-        self, record: dict[str, object], everything: list[dict[str, object]]
+        self,
+        record: dict[str, object],
+        everything: list[dict[str, object]],
+        absent: list[dict[str, str]],
     ) -> list[str]:
         found: list[str] = []
         for other in everything:
@@ -142,6 +149,11 @@ class Bookings:
                 found.append(f"Машина уже занята {self._span(other)}")
             elif record.get("driver_id") and other.get("driver_id") == record["driver_id"]:
                 found.append(f"Водитель уже в другой записи {self._span(other)}")
+        if record.get("driver_id"):
+            for run in absent:
+                if run["employee_id"] == record["driver_id"] and self._overlap(record, run):
+                    label = ABSENCE_LABELS[run["code"]]
+                    found.append(f"По табелю водитель {label} {self._span(run)}")
         return found
 
     @staticmethod
@@ -156,7 +168,10 @@ class Bookings:
     ) -> dict[str, object]:
         drivers = {str(r["id"]): r for r in self._data.snapshot(KIND_EMPLOYEES)}
         vehicles = {str(r["id"]): r for r in self._data.snapshot(KIND_VEHICLES)}
-        return self._row(record, everything, drivers, vehicles)
+        absent = self._timesheet.absences(
+            date.fromisoformat(str(record["date_from"])), date.fromisoformat(str(record["date_to"]))
+        )
+        return self._row(record, everything, drivers, vehicles, absent)
 
     def _row(
         self,
@@ -164,6 +179,7 @@ class Bookings:
         everything: list[dict[str, object]],
         drivers: dict[str, dict[str, object]],
         vehicles: dict[str, dict[str, object]],
+        absent: list[dict[str, str]],
     ) -> dict[str, object]:
         driver = drivers.get(str(record.get("driver_id") or ""))
         vehicle = vehicles.get(str(record["vehicle_id"]))
@@ -183,7 +199,7 @@ class Bookings:
             "vehicle": str(vehicle["plate"]) if vehicle else "— удалена —",
             "days": (end - start).days + 1,
             "span": self._span(record),
-            "conflicts": self._conflicts(record, everything),
+            "conflicts": self._conflicts(record, everything, absent),
         }
 
     def overview(
@@ -195,7 +211,10 @@ class Bookings:
         everything = self._all()
         drivers = {str(r["id"]): r for r in self._data.snapshot(KIND_EMPLOYEES)}
         vehicles = {str(r["id"]): r for r in self._data.snapshot(KIND_VEHICLES)}
-        rows = [self._row(r, everything, drivers, vehicles) for r in everything]
+        absent = self._timesheet.absences(
+            start - timedelta(days=PADDING_DAYS), last + timedelta(days=PADDING_DAYS)
+        )
+        rows = [self._row(r, everything, drivers, vehicles, absent) for r in everything]
         rows.sort(key=lambda r: (str(r["date_from"]), str(r["id"])))
 
         def reaches(row: dict[str, object], first: date, final: date) -> bool:
@@ -219,7 +238,8 @@ class Bookings:
             if today < date.fromisoformat(str(r["date_from"])) <= today + timedelta(days=7)
         ]
         return {
-            "free": self._free_on(day or today, rows, cars, drivers),
+            "free": self._free_on(day or today, rows, cars, drivers, absent),
+            "absent_now": self._absent_on(today, drivers, absent),
             "start": start.isoformat(),
             "end": last.isoformat(),
             "today": today.isoformat(),
@@ -252,6 +272,7 @@ class Bookings:
         rows: list[dict[str, object]],
         cars: list[dict[str, object]],
         drivers: dict[str, dict[str, object]],
+        absent: list[dict[str, str]],
     ) -> dict[str, object]:
         """Cars and drivers with nothing booked on ``day`` and the next day they are taken."""
         iso = day.isoformat()
@@ -280,6 +301,11 @@ class Bookings:
         for person in people:
             if not person.get("is_driver") or not person.get("active", True):
                 continue
+            if any(
+                r["employee_id"] == person["id"] and r["date_from"] <= iso <= r["date_to"]
+                for r in absent
+            ):
+                continue  # on leave or sick: the timesheet says so
             ok, until = verdict("driver_id", person["id"])
             if ok:
                 current = vehicle_at(person, iso) or person.get("vehicle_id")
@@ -288,15 +314,41 @@ class Bookings:
                     {"id": person["id"], "name": str(person["full_name"]), "next": until,
                      "vehicle_id": current, "plate": car.get("plate", "") if car else ""}
                 )
+        absent_ids = {r["employee_id"] for r in absent if r["date_from"] <= iso <= r["date_to"]}
         return {
             "day": iso,
             "vehicles": free_cars,
             "drivers": free_drivers,
+            "absent": self._absent_on(day, drivers, absent),
             "vehicles_total": len(cars),
             "drivers_total": sum(
-                1 for p in drivers.values() if p.get("is_driver") and p.get("active", True)
+                1
+                for p in drivers.values()
+                if p.get("is_driver") and p.get("active", True)
             ),
+            "absent_total": len(absent_ids),
         }
+
+    @staticmethod
+    def _absent_on(
+        day: date, drivers: dict[str, dict[str, object]], absent: list[dict[str, str]]
+    ) -> list[dict[str, str]]:
+        """Drivers on leave or sick on ``day`` and the last day of that leave."""
+        iso = day.isoformat()
+        found = []
+        for run in sorted(absent, key=lambda r: r["date_from"]):
+            person = drivers.get(run["employee_id"])
+            if person and run["date_from"] <= iso <= run["date_to"]:
+                found.append(
+                    {
+                        "id": run["employee_id"],
+                        "name": str(person["full_name"]),
+                        "code": run["code"],
+                        "label": ABSENCE_LABELS[run["code"]],
+                        "date_to": run["date_to"],
+                    }
+                )
+        return found
 
     @staticmethod
     def _regular_driver(

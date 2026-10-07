@@ -10,6 +10,8 @@ const SCH_ICONS = {
   person: "M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 21c0-4 3.6-6 8-6s8 2 8 6",
   free: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M8 12.2l2.8 2.8L16 9.5",
   calendar: "M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4",
+  sick: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 8v8 M8 12h8",
+  leave: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M19 5l-2 2 M7 17l-2 2",
 };
 
 /** A small stroke icon; ``name`` is a key of SCH_ICONS. */
@@ -221,6 +223,22 @@ function schRenderNow(data) {
   } else {
     parts.push(schEl("span", "sch-now-label ok", "Сегодня все машины на месте"));
   }
+  if (data.absent_now.length) {
+    parts.push(
+      schEl("span", "sch-now-label", "Табель"),
+      ...data.absent_now.map((item) => {
+        const node = schEl("span", `sch-chip out ${item.code === "Б" ? "sick" : "leave"}`);
+        node.append(
+          schIconBadge("sch-chip-icon", item.code === "Б" ? "sick" : "leave", 14),
+          schEl("b", "", schShort(item.name)),
+          schEl("span", "", item.label),
+          schEl("em", "", `до ${PV_UTIL.formatDate(item.date_to).slice(0, 5)}`),
+        );
+        node.title = "Отметка в табеле";
+        return node;
+      }),
+    );
+  }
   if (data.soon.length) {
     parts.push(schEl("span", "sch-now-label", "Скоро"), ...data.soon.map((row) => chip(row, true)));
   }
@@ -332,6 +350,15 @@ function schRenderFree(data) {
     column("Водители без работы", "person", free.drivers, personCard, "Все водители заняты"),
   );
   panel.replaceChildren(head, columns);
+  if (free.absent.length) {
+    const line = schEl("p", "sch-free-absent");
+    line.append(schIconBadge("sch-free-icon", "calendar", 15), "Не работают по табелю: ");
+    free.absent.forEach((item, index) => {
+      if (index) line.append(", ");
+      line.append(schEl("b", "", schShort(item.name)), ` — ${item.label} до ${PV_UTIL.formatDate(item.date_to).slice(0, 5)}`);
+    });
+    panel.append(line);
+  }
 }
 
 function schLanes(rows) {

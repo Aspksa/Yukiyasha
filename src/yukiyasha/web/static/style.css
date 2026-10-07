@@ -1253,3 +1253,8 @@ dialog input[type="text"] {
   .sch-stats { grid-template-columns: 1fr; }
   .sch-free-cols { grid-template-columns: 1fr; }
 }
+
+.sch-chip.out { --c: var(--danger); cursor: default; }
+.sch-chip.out.leave { --c: var(--ok); }
+.sch-free-absent { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0 0; padding-top: 12px; color: var(--muted); font-size: 13.5px; border-top: 1px dashed var(--line-strong); }
+.sch-free-absent b { color: var(--text); }

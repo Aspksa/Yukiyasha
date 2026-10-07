@@ -6,6 +6,7 @@ module, never on the web layer, and talks to the disk exclusively through its pu
 """
 
 import re
+import threading
 from datetime import date, datetime
 
 from yukiyasha.modules.disk import DiskModule
@@ -72,6 +73,8 @@ class PrimavtodorModule:
         self.data = Records(disk, self.settings)  # employees, vehicles, waybills, fuel
         self.timesheet = Timesheet(disk, self.data)
         self.bookings = Bookings(disk, self.data, self.timesheet)
+        # statements are matched against what is on file, so two loads must not overlap
+        self._statement_lock = threading.RLock()
         self.data.extra_references = self.bookings.references
         self._state = ModuleState.REGISTERED
         self._last_error: str | None = None
@@ -310,7 +313,8 @@ class PrimavtodorModule:
         self, content: bytes, filename: str, *, apply: bool
     ) -> dict[str, object]:
         """Preview (``apply=False``) or load the provider's statement into the fuel section."""
-        return import_statement(self.data, content, filename, apply=apply)
+        with self._statement_lock:
+            return import_statement(self.data, content, filename, apply=apply)
 
     def briefing(self, now: datetime | None = None) -> dict[str, object]:
         """What needs attention today: trips, leave, open waybills, the inbox, the month."""
@@ -331,9 +335,11 @@ class PrimavtodorModule:
 
     def fuel_inbox_scan(self) -> dict[str, object]:
         """Load every statement waiting in «ГСМ/Входящие»."""
-        return fuel_inbox.scan(
-            self._disk, lambda content, name: self.import_fuel_statement(content, name, apply=True)
-        )
+        with self._statement_lock:  # the second of two scans finds the files already moved
+            return fuel_inbox.scan(
+                self._disk,
+                lambda content, name: self.import_fuel_statement(content, name, apply=True),
+            )
 
     # ----- monthly fuel card -----
 

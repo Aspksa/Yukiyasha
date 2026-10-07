@@ -7,7 +7,7 @@ All notable changes to Yukiyasha are documented here.
 ### Fixed
 - A car or driver with bookings in the schedule can no longer be deleted (the booking would have
   vanished from the grid); a hand-edited timesheet file with a broken date no longer breaks the
-  schedule; two statement scans at once no longer fail on moving the same file; a month above 12
+  schedule; two statement loads at once (inbox scans or an upload) are now serialized, so a statement is never imported twice; a month above 12
   in a quick line («7.13») is not read as January.
 
 ### Added

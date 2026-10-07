@@ -102,6 +102,18 @@ class StubPrimavtodor:
     def settings(self) -> dict[str, object]:
         return {"season": "summer"}
 
+    def list_documents(self, section_id: str, *, limit: int = 10) -> list[dict[str, object]]:
+        return [
+            {
+                "section_id": section_id,
+                "section_title": "Служебные записки",
+                "name": "записка-12.md",
+                "path": "projects/work/Примавтодор/Служебные записки/записка-12.md",
+                "size": 321,
+                "extension": "md",
+            }
+        ][:limit]
+
 
 def test_ai_tools_mask_sensitive_fields_and_write_audit(tmp_path: Path) -> None:
     disk = DiskModule(tmp_path / "disk")
@@ -127,3 +139,26 @@ def test_ai_tools_mask_sensitive_fields_and_write_audit(tmp_path: Path) -> None:
     serialized = events[0].read_text(encoding="utf-8")
     assert "Иван Иванов" not in serialized
     assert "1234567890123456" not in serialized
+
+
+
+def test_ai_document_tool_exposes_metadata_only(tmp_path: Path) -> None:
+    disk = DiskModule(tmp_path / "disk")
+    disk.start()
+    tools = AiToolRegistry(StubPrimavtodor(), AuditLog(disk))  # type: ignore[arg-type]
+
+    names = {item["function"]["name"] for item in tools.definitions("Покажи служебные документы")}
+    assert "primavtodor_list_documents" in names
+    assert "primavtodor_read_document" not in names
+    assert "primavtodor_read_document" not in tools.names
+
+    payload = json.loads(
+        tools.execute(
+            "primavtodor_list_documents",
+            {"section_id": "memos", "limit": 5},
+            "Покажи служебные документы",
+        )
+    )
+    assert payload["documents"][0]["name"] == "записка-12.md"
+    assert "preview" not in payload["documents"][0]
+    assert "content" not in payload["documents"][0]

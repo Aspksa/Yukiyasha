@@ -5,13 +5,24 @@ section (timesheet, employees, garage, fuel, contracts, ...). It depends only on
 module, never on the web layer, and talks to the disk exclusively through its public API.
 """
 
+import re
+from datetime import date
+
 from yukiyasha.modules.disk import DiskModule
 from yukiyasha.modules.manifest import ModuleManifest
 from yukiyasha.modules.primavtodor.errors import (
     InvalidDocumentNameError,
+    PrintNotAvailableError,
     UnknownSectionError,
 )
+from yukiyasha.modules.primavtodor.printing import WaybillForm3, fill_form3
 from yukiyasha.modules.primavtodor.records import Records
+from yukiyasha.modules.primavtodor.schema import (
+    KIND_EMPLOYEES,
+    KIND_VEHICLES,
+    KIND_WAYBILLS,
+    WAYBILL_FORMS,
+)
 from yukiyasha.modules.primavtodor.sections import (
     GROUP_TITLES,
     PRIMAVTODOR_DIR,
@@ -158,3 +169,59 @@ class PrimavtodorModule:
         if not clean or clean in {".", ".."} or "/" in clean or "\\" in clean:
             raise InvalidDocumentNameError("Document name must be a single file name")
         return f"{section.path}/{clean}"
+
+    # ----- printing -----
+
+    def print_waybill(self, waybill_id: str) -> tuple[bytes, str]:
+        """The waybill as a filled ``.xlsx`` of the organisation's form, and a file name."""
+        waybill = self.data.get(KIND_WAYBILLS, waybill_id)
+        values, computed = waybill["values"], waybill["computed"]
+        driver = self.data.get(KIND_EMPLOYEES, str(values.get("driver_id")))["values"]
+        vehicle = self.data.get(KIND_VEHICLES, str(values.get("vehicle_id")))["values"]
+
+        form = str(vehicle.get("waybill_form") or "car")
+        if form != "car":
+            title = dict(WAYBILL_FORMS).get(form, form)
+            raise PrintNotAvailableError(
+                f"Печать бланка «{title}» пока не готова: сейчас доступна форма № 3 "
+                "(легковой автомобиль). Для этой машины выберите другой бланк или заполните "
+                "лист вручную."
+            )
+
+        try:
+            day = date.fromisoformat(str(values.get("date")))
+        except ValueError:
+            day = None
+        issued = computed.get("fuel_issued")
+        settings = self.settings.print_settings()
+        data = WaybillForm3(
+            number=str(values.get("number") or ""),
+            day=day,
+            plate=str(vehicle.get("plate") or ""),
+            model=str(vehicle.get("model") or ""),
+            garage_number=str(vehicle.get("garage_number") or ""),
+            driver=str(driver.get("full_name") or ""),
+            personnel_number=str(driver.get("personnel_number") or ""),
+            license_number=str(driver.get("license_number") or ""),
+            license_class=str(driver.get("license_class") or ""),
+            fuel_brand=str(vehicle.get("fuel_type") or ""),
+            odometer_out=values.get("odometer_out"),
+            odometer_in=values.get("odometer_in"),
+            time_out=str(values.get("time_out") or ""),
+            time_in=str(values.get("time_in") or ""),
+            fuel_out=values.get("fuel_out"),
+            fuel_in=values.get("fuel_in"),
+            issued=issued if issued else None,
+            norm=computed.get("norm"),
+            consumption=computed.get("consumption"),
+            deviation=computed.get("deviation"),
+            org_name=settings["org_name"],
+            org_header=settings["org_header"],
+            unit=settings["unit"],
+            address=settings["address"],
+            mechanic=settings["mechanic"],
+            dispatcher=settings["dispatcher"],
+            control=settings["control"],
+        )
+        number = re.sub(r'[\\/:*?"<>|\s]+', "-", data.number).strip("-") or waybill_id
+        return fill_form3(data), f"Путевой лист № {number}.xlsx"

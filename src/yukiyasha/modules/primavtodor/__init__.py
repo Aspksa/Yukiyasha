@@ -3,6 +3,7 @@
 from yukiyasha.modules.primavtodor.errors import (
     InvalidDocumentNameError,
     PrimavtodorError,
+    PrintNotAvailableError,
     RecordInUseError,
     RecordNotFoundError,
     RecordValidationError,
@@ -25,6 +26,7 @@ __all__ = [
     "InvalidDocumentNameError",
     "PrimavtodorError",
     "PrimavtodorModule",
+    "PrintNotAvailableError",
     "RecordInUseError",
     "RecordNotFoundError",
     "RecordValidationError",

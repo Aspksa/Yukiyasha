@@ -39,6 +39,7 @@ from yukiyasha.modules.primavtodor.sections import SECTIONS_BY_ID
 from yukiyasha.modules.primavtodor.settings import SEASON_LABELS, ModuleSettings
 
 ID_RE = re.compile(r"^[a-z]+-[0-9a-f]{8}$")
+TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 META_KEYS = {"id", "created_at", "updated_at"}
 OVERRUN_RATIO = 0.10  # fuel consumption above the norm by more than this is flagged
 MISSING_TARGET = "— удалено —"
@@ -451,6 +452,13 @@ class Records:
 
     @staticmethod
     def _rule_waybill(values: dict[str, object], ctx: _Ctx, errors: dict[str, str]) -> None:
+        for name in ("time_out", "time_in"):
+            raw = values.get(name)
+            if raw and not TIME_RE.match(str(raw)):
+                errors[name] = "Время в формате ЧЧ:ММ, например 08:30"
+            elif raw:
+                hours, minutes = str(raw).split(":")
+                values[name] = f"{int(hours):02d}:{minutes}"
         odometer_in, fuel_in = values.get("odometer_in"), values.get("fuel_in")
         if (odometer_in is None) != (fuel_in is None):
             message = "Для закрытия листа укажите и пробег, и остаток топлива при возврате"

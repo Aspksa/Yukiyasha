@@ -2,6 +2,21 @@
 
 All notable changes to Yukiyasha are documented here.
 
+## [0.7.0] - 2026-10-07
+
+Proposal review is now available directly inside the assistant conversation.
+
+### Added
+- In-chat proposal cards with operation, target, reason, status and field-level diff.
+- Approve/reject controls only inside pending proposal cards; no new global navigation actions.
+- Immutable `before` snapshot for update/delete proposals so the browser can show exact old/new values.
+- Pure `proposals.js` UI helpers with Node tests for create/update/delete diffs.
+- JavaScript syntax checks for assistant/proposal UI in Fast CI.
+
+### Changed
+- Assistant privacy text now accurately explains read-only Примавтодор tool disclosure and proposal approval.
+- Recent applied/rejected/stale proposals stay visible in the assistant as history without action controls.
+
 ## [0.6.0] - 2026-10-07
 
 AI-assisted Примавтодор mutations now go through a concrete proposal and separate human approval.

@@ -47,7 +47,7 @@ def test_disk_write_read_list_delete(tmp_path: Path) -> None:
             "name": "hello.txt",
             "path": "notes/hello.txt",
             "type": "file",
-            "size": len("Привет, Yukiyasha".encode("utf-8")),
+            "size": len("Привет, Yukiyasha".encode()),
         }
     ]
 

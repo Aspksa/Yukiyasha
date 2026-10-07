@@ -57,6 +57,8 @@ class DiskModule:
 
         entries: list[dict[str, object]] = []
         for item in sorted(directory.iterdir(), key=lambda value: (not value.is_dir(), value.name.lower())):
+            if item.is_symlink():
+                continue
             stat = item.stat()
             entries.append(
                 {

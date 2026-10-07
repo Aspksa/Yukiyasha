@@ -162,7 +162,7 @@ exit /b 0
 
 :ensure_dependencies
 echo [4/5] Проверка зависимостей...
-for /f "usebackq delims=" %%H in (`"%PYTHON_EXE%" -c "import hashlib,pathlib; print(hashlib.sha256(pathlib.Path('pyproject.toml').read_bytes()).hexdigest())"`) do set "CURRENT_DEPS_HASH=%%H"
+for /f "delims=" %%H in ('%PYTHON_EXE% -c "import hashlib,pathlib; print(hashlib.sha256(pathlib.Path('pyproject.toml').read_bytes()).hexdigest())"') do set "CURRENT_DEPS_HASH=%%H"
 if not defined CURRENT_DEPS_HASH (
     echo [ОШИБКА] Не удалось вычислить контрольную сумму pyproject.toml.
     exit /b 1

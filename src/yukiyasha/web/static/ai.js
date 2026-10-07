@@ -199,6 +199,23 @@ function aiRenderHello() {
   aiHideError();
 }
 
+async function aiHydrateDocumentPreview(card, doc) {
+  if (doc.preview) return;
+  try {
+    const file = await api("GET", "/api/disk/file", { params: { path: doc.path } });
+    const preview = documentPresentation.previewText(file.content);
+    if (!preview || !card.isConnected) return;
+    const body = card.querySelector(".ai-document-body");
+    const meta = card.querySelector(".ai-document-meta");
+    const paragraph = document.createElement("p");
+    paragraph.className = "ai-document-preview";
+    paragraph.textContent = preview;
+    body.insertBefore(paragraph, meta);
+  } catch {
+    // The card is still useful as document metadata even if preview cannot be loaded.
+  }
+}
+
 function aiDocumentCard(rawDocument) {
   const doc = documentPresentation.normalize(rawDocument);
   if (!doc) return null;
@@ -253,6 +270,7 @@ function aiDocumentCard(rawDocument) {
   action.addEventListener("click", () => navigate({ file: doc.path }));
 
   card.append(page, body, action);
+  void aiHydrateDocumentPreview(card, doc);
   return card;
 }
 

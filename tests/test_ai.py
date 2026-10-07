@@ -13,6 +13,7 @@ from yukiyasha.modules.ai import (
     MessageRejectedError,
     ProviderError,
 )
+from yukiyasha.modules.ai.persona_pack import persona_text
 from yukiyasha.modules.disk import DiskModule
 
 SECRET = "sk-test-SECRET-123"
@@ -130,7 +131,8 @@ def test_a_conversation_continues_with_its_history(tmp_path: Path) -> None:
 
 def test_old_history_is_trimmed_to_the_context_budget(tmp_path: Path) -> None:
     with FakeProvider(chunks=["ok"]) as provider:
-        module = make_module(tmp_path, settings_for(provider, max_context_chars=1200))
+        budget = len(persona_text(AiSettings().assistant_name)) + 700
+        module = make_module(tmp_path, settings_for(provider, max_context_chars=budget))
         chat_id = ask(module, "a" * 300)[0]["conversation_id"]
         for letter in "bcd":
             ask(module, letter * 300, chat_id)
@@ -141,7 +143,7 @@ def test_old_history_is_trimmed_to_the_context_budget(tmp_path: Path) -> None:
     texts = [m["content"] for m in sent]
     assert "a" * 300 not in texts  # the oldest turn no longer fits
     assert texts[-1] == "последний" and sent[0]["role"] == "system"
-    assert sum(len(t) for t in texts) <= 1200 + len(texts[-1])
+    assert sum(len(t) for t in texts) <= budget + len(texts[-1])
 
 
 def test_persona_is_created_once_and_sent_as_the_system_prompt(tmp_path: Path) -> None:
@@ -152,7 +154,7 @@ def test_persona_is_created_once_and_sent_as_the_system_prompt(tmp_path: Path) -
         module.set_persona("Ты — строгий бухгалтер.")
         module.stop()
         module.start()  # a restart must not overwrite the edited persona
-        ask(module, "Привет")
+        ask(module, "Вопрос")
 
         assert module.persona().strip() == "Ты — строгий бухгалтер."
         assert provider.requests[0]["body"]["messages"][0]["content"].strip() == (
@@ -290,3 +292,50 @@ def test_the_key_is_never_written_to_the_disk(tmp_path: Path) -> None:
                     message.pop("content", None) if message["role"] == "assistant" else None
                 text = json.dumps(data, ensure_ascii=False)
             assert SECRET not in text, f"key found in {path}"
+
+
+# ----- character pack -----
+
+def test_default_persona_is_the_character_and_an_old_default_is_upgraded(tmp_path: Path) -> None:
+    from yukiyasha.modules.ai.module import OLD_DEFAULT_PERSONA
+
+    with FakeProvider(chunks=["ok"]) as provider:
+        settings = settings_for(provider, assistant_name="Юкияша")
+        module = make_module(tmp_path, settings)
+        persona = module.persona()
+        assert "Господин" in persona and "НЕ видишь данные программы" in persona
+
+        module.set_persona(OLD_DEFAULT_PERSONA.format(name="Юкияша"))
+        module.stop()
+        module.start()  # the untouched v0.3.0 default becomes the character
+        assert module.persona() == persona
+
+
+def test_tone_examples_fit_the_message_and_do_not_repeat(tmp_path: Path) -> None:
+    with FakeProvider(chunks=["ok"]) as provider:
+        module = make_module(tmp_path, settings_for(provider))
+        chat_id = ask(module, "Привет!")[0]["conversation_id"]
+        ask(module, "Привет ещё раз", chat_id)
+
+        first, second = (r["body"]["messages"][0]["content"] for r in provider.requests)
+    assert "Примеры твоего тона" in first and "Примеры твоего тона" in second
+
+    def lines(text: str) -> set[str]:
+        return set(text.split("Примеры твоего тона")[1].splitlines()[1:])
+
+    assert lines(first).isdisjoint(lines(second))
+    saved = module.get_chat(chat_id)["messages"]
+    ids = [m.get("examples") for m in saved if m["role"] == "assistant"]
+    assert len(ids[0]) == 3 and set(ids[0]).isdisjoint(ids[1])
+
+
+def test_no_examples_without_a_match_or_in_a_crisis(tmp_path: Path) -> None:
+    with FakeProvider(chunks=["ok"]) as provider:
+        module = make_module(tmp_path, settings_for(provider))
+        ask(module, "Сколько будет 2+2?")
+        ask(module, "Привет, мне так плохо, не хочу жить")
+
+        for request in provider.requests:
+            assert "Примеры твоего тона" not in request["body"]["messages"][0]["content"]
+    assert all("examples" not in m for chat in module.list_chats()
+               for m in module.get_chat(chat["id"])["messages"])

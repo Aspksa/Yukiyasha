@@ -24,6 +24,12 @@ from yukiyasha.modules.ai.errors import (
     ConversationNotFoundError,
     MessageRejectedError,
 )
+from yukiyasha.modules.ai.persona_pack import (
+    RECENT_WINDOW,
+    format_examples,
+    persona_text,
+    pick_examples,
+)
 from yukiyasha.modules.ai.provider import ChatProvider, Message, OpenAICompatibleProvider
 from yukiyasha.modules.disk import DiskConflictError, DiskModule
 from yukiyasha.modules.manifest import ModuleManifest
@@ -49,7 +55,8 @@ AI_MANIFEST = ModuleManifest(
     permissions=("disk.read", "disk.write", "ai.provider"),
 )
 
-DEFAULT_PERSONA = """Ты — {name}, личный помощник пользователя в программе Yukiyasha.
+# The persona written by v0.3.0; a file that still equals it is upgraded to the character pack.
+OLD_DEFAULT_PERSONA = """Ты — {name}, личный помощник пользователя в программе Yukiyasha.
 
 Правила:
 - Отвечай по-русски, коротко и по делу.
@@ -74,6 +81,7 @@ class ChatTurn:
         user_text: str,
         stream: Iterator[str],
         slot: threading.BoundedSemaphore,
+        example_ids: list[str] | None = None,
     ) -> None:
         self.conversation_id = str(chat["id"])
         self._module = module
@@ -81,6 +89,7 @@ class ChatTurn:
         self._user_text = user_text
         self._stream = stream
         self._slot = slot
+        self._example_ids = example_ids or []
         self._released = False
 
     def events(self) -> Iterator[dict[str, object]]:
@@ -94,7 +103,7 @@ class ChatTurn:
             answer = "".join(parts).strip()
             if not answer:
                 raise MessageRejectedError("Провайдер вернул пустой ответ")
-            self._module._save_turn(self._chat, self._user_text, answer)
+            self._module._save_turn(self._chat, self._user_text, answer, self._example_ids)
             yield {"type": "done", "conversation_id": self.conversation_id}
         finally:
             self.release()
@@ -133,14 +142,13 @@ class AiModule:
 
     def start(self) -> None:
         self._disk.make_dir(CHATS_DIR)
+        default = persona_text(self.settings.assistant_name)
         try:  # keep a persona the user already edited
-            self._disk.write_text(
-                PERSONA_PATH,
-                DEFAULT_PERSONA.format(name=self.settings.assistant_name),
-                overwrite=False,
-            )
+            self._disk.write_text(PERSONA_PATH, default, overwrite=False)
         except DiskConflictError:
-            pass
+            old = OLD_DEFAULT_PERSONA.format(name=self.settings.assistant_name)
+            if self._disk.read_text(PERSONA_PATH) == old:
+                self._disk.write_text(PERSONA_PATH, default, overwrite=True)
         self._last_error = None
         self._state = ModuleState.READY
 
@@ -236,12 +244,17 @@ class AiModule:
         self.get_chat(chat_id)
         self._disk.delete(self._chat_path(chat_id))
 
-    def _save_turn(self, chat: dict[str, object], user_text: str, answer: str) -> None:
+    def _save_turn(
+        self, chat: dict[str, object], user_text: str, answer: str, example_ids: list[str]
+    ) -> None:
         now = _now()
         messages = chat.setdefault("messages", [])
         assert isinstance(messages, list)
         messages.append({"role": "user", "content": user_text, "at": now})
-        messages.append({"role": "assistant", "content": answer, "at": now})
+        reply: dict[str, object] = {"role": "assistant", "content": answer, "at": now}
+        if example_ids:
+            reply["examples"] = example_ids
+        messages.append(reply)
         if not chat.get("title"):
             chat["title"] = " ".join(user_text.split())[:TITLE_CHARS]
         chat["updated_at"] = now
@@ -250,8 +263,21 @@ class AiModule:
 
     # ----- chatting -----
 
-    def _context(self, persona: str, history: list[object], user_text: str) -> list[Message]:
-        """System prompt + as much recent history as fits the budget + the new message."""
+    def _context(
+        self, persona: str, history: list[object], user_text: str
+    ) -> tuple[list[Message], list[str]]:
+        """System prompt + as much recent history as fits the budget + the new message.
+
+        Also returns the ids of the tone examples added to the system prompt.
+        """
+        recent = [
+            str(i)
+            for item in history[-RECENT_WINDOW:]
+            if isinstance(item, dict) and isinstance(item.get("examples"), list)
+            for i in item["examples"]
+        ]
+        examples = pick_examples(user_text, recent)
+        persona += format_examples(examples)
         budget = self.settings.max_context_chars - len(persona) - len(user_text)
         kept: list[Message] = []
         used = 0
@@ -265,7 +291,8 @@ class AiModule:
             used += len(content)
         kept.reverse()
         system: Message = {"role": "system", "content": persona}
-        return [system, *kept, {"role": "user", "content": user_text}]
+        messages: list[Message] = [system, *kept, {"role": "user", "content": user_text}]
+        return messages, [str(e["id"]) for e in examples]
 
     def begin_chat(self, chat_id: str | None, message: str) -> ChatTurn:
         """Validate, connect to the provider and return the turn to stream.
@@ -293,7 +320,7 @@ class AiModule:
             raise AiBusyError("Помощник уже обрабатывает запросы — подождите немного")
         try:
             history = chat.get("messages")
-            context = self._context(
+            context, example_ids = self._context(
                 self.persona(), history if isinstance(history, list) else [], text
             )
             provider = self._provider or OpenAICompatibleProvider(self.settings)
@@ -301,4 +328,4 @@ class AiModule:
         except BaseException:
             self._slots.release()
             raise
-        return ChatTurn(self, chat, text, stream, self._slots)
+        return ChatTurn(self, chat, text, stream, self._slots, example_ids)

@@ -4,6 +4,13 @@ All notable changes to Yukiyasha are documented here.
 
 ## [Unreleased]
 
+### Added
+- The assistant now speaks as **Юкияша** by default: a bundled character pack (persona, honesty
+  rules and 400 example replies in 20 categories). A few replies that fit the message are shown to
+  the model as a tone sample (never sent as-is, never repeated within the last 30 answers, none for
+  messages about real danger). A persona file still equal to the 0.3.0 default is upgraded on
+  start; an edited persona is left alone.
+
 ## [0.3.0] - 2026-10-07
 
 Workspace UI, the **Примавтодор** module with linked data, and the first version of the

@@ -105,6 +105,8 @@ as ordinary environment variables (they win over the file). `http://` is accepte
 - **Every message is sent to the provider** together with the persona and the earlier messages of
   the conversation. The assistant currently sees none of the Yukiyasha data (waybills, employees,
   documents). Do not paste personal data you would not send to that provider.
+- By default the assistant speaks as Юкияша (a bundled character pack); examples of her tone are
+  added to the prompt, so the request is a little longer. Replace the persona any time.
 - The persona (`ai/persona.md`) and the conversations (`ai/chats/chat-*.json`) are plain files on
   the disk; edit the persona on the page ("Личность") at any time.
 - Cost control: answers are limited by `MAX_TOKENS`, a conversation sends only the most recent

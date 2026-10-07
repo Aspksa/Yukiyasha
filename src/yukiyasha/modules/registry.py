@@ -23,6 +23,8 @@ class Module(Protocol):
 
     def stop(self) -> None: ...
 
+    def fail(self, error: BaseException) -> None: ...
+
     def snapshot(self) -> dict[str, object]: ...
 
 
@@ -46,18 +48,33 @@ class ModuleRegistry:
 
     def start_all(self) -> None:
         started: list[Module] = []
-        try:
-            for module in self._modules.values():
+        for module in self._modules.values():
+            try:
                 module.start()
-                started.append(module)
-        except Exception:
-            for module in reversed(started):
-                module.stop()
-            raise
+            except Exception as exc:
+                try:
+                    module.stop()
+                finally:
+                    module.fail(exc)
+
+                for started_module in reversed(started):
+                    try:
+                        started_module.stop()
+                    except Exception:
+                        # Preserve the startup failure as the primary exception.
+                        continue
+                raise
+            started.append(module)
 
     def stop_all(self) -> None:
+        errors: list[BaseException] = []
         for module in reversed(tuple(self._modules.values())):
-            module.stop()
+            try:
+                module.stop()
+            except Exception as exc:
+                errors.append(exc)
+        if errors:
+            raise ExceptionGroup("Failed to stop one or more modules", errors)
 
     def snapshots(self) -> list[dict[str, object]]:
         return [module.snapshot() for module in self._modules.values()]

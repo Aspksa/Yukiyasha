@@ -48,7 +48,7 @@ jobs:
           import glob, zipfile
           names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
           assert len(names) == len(set(names)), "duplicate files in wheel"
-          for required in ("app.js", "util.js", "primavtodor.js", "index.html", "style.css"):
+          for required in ("app.js", "util.js", "primavtodor.js", "ai.js", "index.html", "style.css"):
               assert f"yukiyasha/web/static/{required}" in names, required
           PY
 

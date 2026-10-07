@@ -51,7 +51,10 @@ class RequestBodyLimitMiddleware:
         async def replay() -> dict[str, Any]:
             if messages:
                 return messages.pop(0)
-            return {"type": "http.request", "body": b"", "more_body": False}
+            # The body is used up. A streaming response waits here for the client to go away
+            # (``http.disconnect``), so hand over to the real receive(), which blocks until then.
+            # Returning an empty request again would spin the event loop forever.
+            return await receive()
 
         await self.app(scope, replay, send)
 

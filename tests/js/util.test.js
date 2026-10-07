@@ -58,6 +58,8 @@ test("hash routing round-trips, including unicode, spaces and plus signs", () =>
     { system: true },
     { module: "primavtodor" },
     { module: "primavtodor", section: "waybills" },
+    { ai: true },
+    { ai: true, chat: "chat-1a2b3c4d" },
   ];
   for (const route of routes) {
     const parsed = u.parseHash(u.routeToHash(route));

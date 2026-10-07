@@ -38,6 +38,22 @@ Browser -> Web/API -> Core -> Module Registry -> Modules
 
 Core and modules never import from Web/API.
 
+## Модуль «Помощник» (ИИ по ключу)
+
+`modules/ai` depends only on the disk module. A `ChatProvider` (`open(messages) -> chunks`) hides
+the vendor: `OpenAICompatibleProvider` speaks the common `/chat/completions` streaming protocol
+over the standard library, so there is no extra dependency and any compatible service (cloud or
+local) works. Settings (`config.AiSettings`) come from the environment or `ai.env`; the key is
+excluded from `repr`, never persisted and scrubbed from errors.
+
+- one turn = validate → build the context (persona + the history that fits the budget + the new
+  message) → connect (errors surface as HTTP statuses before any streaming starts) → stream
+  server-sent events → save the conversation only when the whole answer has arrived;
+- a bounded semaphore limits concurrent answers; the slot is released when the stream ends or
+  the response is torn down;
+- the module reads no business data. Giving it read-only tools (waybills, fuel, timesheet) is a
+  separate step that needs the permission boundary first.
+
 ## Модуль Примавтодор
 
 Work-project module. It depends only on the disk module (never on the web layer), is registered

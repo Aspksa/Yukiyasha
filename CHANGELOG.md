@@ -5,6 +5,25 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Added
+- **AI assistant** (`ai` module, "Помощник" page): a streamed chat with any OpenAI-compatible API
+  by your own key (DeepSeek, Cloud.ru, OpenAI, local Ollama, ...). Address, model and key come from
+  `YUKIYASHA_AI_*` variables or `~/.yukiyasha/ai.env`; the key is never stored on the disk module,
+  logged, returned by the API or shown in the UI, and is scrubbed from provider error texts.
+  - persona (`ai/persona.md`, editable on the page) and conversations (`ai/chats/*.json`) are
+    plain files on the disk; a failed request saves nothing;
+  - cost and safety limits: `max_tokens`, a context budget that trims old history, 8 000
+    characters per message, two concurrent answers, `https://` required except for `localhost`;
+  - API: `GET /api/ai/status`, `GET/PUT /api/ai/persona`, `GET /api/ai/conversations[/{id}]`,
+    `DELETE /api/ai/conversations/{id}`, `POST /api/ai/chat` (server-sent events);
+  - the assistant sees none of the Yukiyasha data yet; read-only tools come next.
+
+### Fixed
+- a streamed response to a POST/PUT request froze the server: after the request body was used up,
+  the body-limit middleware kept answering `receive()` with empty request messages, so a
+  streaming response waiting for the client to disconnect spun the event loop forever. It now
+  hands the connection back to the real `receive()`; covered by a regression test.
+
+### Added
 - **Summer and winter fuel norms.** Every vehicle has two norms (`norm_summer`, `norm_winter`,
   l per 100 km) instead of one. A single **Лето / Зима switch** (in the headers of the module
   page and of every record page) changes everything at once:

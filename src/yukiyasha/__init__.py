@@ -1,3 +1,5 @@
 """Yukiyasha application package."""
 
-__version__ = "0.2.0"
+from yukiyasha.version import get_version
+
+__version__ = get_version()

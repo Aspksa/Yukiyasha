@@ -121,7 +121,11 @@ class DiskModule:
             raise self._translate_os_error(exc) from exc
 
         try:
-            visible = [item for item in directory.iterdir() if not item.is_symlink()]
+            visible = [
+                item
+                for item in directory.iterdir()
+                if not item.is_symlink() and not item.name.startswith(TEMP_PREFIX)
+            ]
             visible.sort(key=lambda value: (not value.is_dir(), value.name.lower()))
             entries: list[dict[str, object]] = []
             root = self.root.resolve()
@@ -209,7 +213,6 @@ class DiskModule:
             else:
                 try:
                     os.link(temp_path, path)
-                    temp_path.unlink()
                 except FileExistsError as exc:
                     raise DiskConflictError("File already exists") from exc
                 except OSError as exc:
@@ -234,6 +237,7 @@ class DiskModule:
                         if created:
                             path.unlink(missing_ok=True)
                         raise
+                temp_path.unlink(missing_ok=True)
                 temp_path = None
         except DiskError:
             raise
@@ -282,6 +286,9 @@ class DiskModule:
             raise DiskPathError("Invalid filesystem path") from exc
         except OSError as exc:
             raise self._translate_os_error(exc) from exc
+
+        if relative == Path("."):
+            return root
 
         current = root
         for part in relative.parts:

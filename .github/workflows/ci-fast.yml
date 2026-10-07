@@ -75,6 +75,7 @@ jobs:
           if ($text -notmatch "Некорректный порт") {
             throw "Launcher failed for an unexpected reason. Output: $text"
           }
+          exit 0
 
       - name: Verify code page restore parser
         shell: cmd

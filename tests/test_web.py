@@ -756,7 +756,7 @@ def test_ai_persona_roundtrip_over_http(ai_client: TestClient) -> None:
     assert ai_client.put("/api/ai/persona", json={"text": "  "}).status_code == 422
 
     assert ai_client.get("/api/ai/persona").json()["text"].strip() == "Ты — Саюри."
-    ai_client.post("/api/ai/chat", json={"message": "Привет"})
+    ai_client.post("/api/ai/chat", json={"message": "Вопрос"})
     sent = ai_client.provider.requests[-1]["body"]["messages"][0]
     assert sent == {"role": "system", "content": "Ты — Саюри.\n"}
 

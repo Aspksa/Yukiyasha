@@ -168,6 +168,8 @@ VEHICLES = Entity(
         Field("plate", "Госномер", TEXT, required=True, unique=True, max_len=15),
         Field("model", "Марка и модель", TEXT, required=True, max_len=80),
         Field("garage_number", "Гаражный номер", TEXT, max_len=20),
+        Field("tank_liters", "Объём бака, л", FLOAT, min=0, max=2000,
+              help="Нужен контролю: заправка больше бака считается ошибкой"),
         Field("waybill_form", "Бланк путевого листа", CHOICE, default="car",
               options=WAYBILL_FORMS, help="Печать готова для формы № 3 (легковой автомобиль)"),
         Field("fuel_type", "Вид топлива", CHOICE, default="ДТ", options=FUEL_TYPES),

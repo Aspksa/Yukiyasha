@@ -32,7 +32,8 @@
 - Atomic disk writes, sandbox validation, request limits, security headers and same-origin checks.
 - Примавтодор linked records, seasonal fuel norms, timesheet, REST API and UI.
 - Windows launcher and two-tier GitHub Actions CI.
-- Printing and fuel reports (unreleased): waybill form № 3 as the organisation's own .xlsx, fuel-card statement import, monthly fuel card, monthly «Анализ расхода ГСМ». Forms № 3 спец. and № 4-П are not printable yet.
+- Closing of the month and fuel control (unreleased): rules in `checks.py`, one screen, one zip, accepted findings, read-only assistant tool.
+- Printing and fuel reports: waybill form № 3 as the organisation's own .xlsx, fuel-card statement import, monthly fuel card, monthly «Анализ расхода ГСМ». Forms № 3 спец. and № 4-П are not printable yet.
 
 ## CI strategy
 

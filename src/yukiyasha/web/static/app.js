@@ -801,6 +801,7 @@ async function loadModule() {
     sectionByPath.clear();
     for (const section of sections) sectionByPath.set(section.path, section.id);
     renderModuleSections(sections);
+    pvWire(); // the module page has its own buttons (closing the month)
     pvRenderSeasonSwitch();
   } catch (error) {
     if (isAbort(error)) return;

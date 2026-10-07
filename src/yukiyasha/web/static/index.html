@@ -162,6 +162,10 @@
           </div>
           <div class="head-actions">
             <div class="season-slot"></div>
+            <button class="btn btn-primary" id="btn-month" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-sec-timesheet"/></svg>
+              <span>Закрытие месяца</span>
+            </button>
             <button class="btn" id="btn-module-refresh" type="button">
               <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>
               <span>Обновить</span>
@@ -419,6 +423,27 @@
       <div class="dlg-actions">
         <button class="btn" type="button" data-close>Закрыть</button>
         <button class="btn btn-primary" type="submit" id="report-download">Скачать (.xlsx)</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-month" class="dlg-wide" aria-labelledby="dlg-month-title">
+    <form method="dialog" id="form-month">
+      <h2 id="dlg-month-title">Закрытие месяца</h2>
+      <div class="cal-bar">
+        <button class="icon-btn" id="month-prev" type="button" aria-label="Предыдущий месяц"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></button>
+        <label class="sr-only" for="month-input">Месяц</label>
+        <input type="month" id="month-input">
+        <button class="icon-btn" id="month-next" type="button" aria-label="Следующий месяц"><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+        <label class="check month-hidden"><input type="checkbox" id="month-show-dismissed"> показать принятые</label>
+      </div>
+      <ul class="month-steps" id="month-steps"></ul>
+      <h3 class="month-sub" id="month-findings-title" hidden>Что не сходится</h3>
+      <ul class="month-findings" id="month-findings"></ul>
+      <p class="dlg-error" id="month-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button class="btn" type="button" data-close>Закрыть</button>
+        <button class="btn btn-primary" type="button" id="month-package">Скачать всё за месяц (.zip)</button>
       </div>
     </form>
   </dialog>

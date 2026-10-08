@@ -35,7 +35,8 @@ BUSINESS_TRIGGER = re.compile(
     r"записк|приказ|распоряж|график|командиров|свободн|отъезд|выезд|больнич|отпуск|"
     r"сводк|занят|поездк|брон|"
     # «Запиши Веровского 7-9»: a short booking order has a name and a date, nothing else
-    r"\b(?:" + BOOKING_VERBS + r")(?:\s+\S+){1,4}?\s+(?:с\s+|до\s+|на\s+)?\d{1,2}\b",
+    r"\b(?:" + BOOKING_VERBS + r")(?:\s+\S+){1,4}?\s+(?:с\s+|до\s+|на\s+)?"
+    r"(?:\d{1,2}\b|сегодня|завтра|послезавтра)",
     re.IGNORECASE,
 )
 MEMORY_TRIGGER = re.compile(

@@ -368,3 +368,42 @@ def test_calls_that_cannot_report_back_are_not_executed(setup, tmp_path: Path) -
     assert [p for p in proposals.list_items() if p["status"] == "pending"] == []
     answers = [m for m in provider.requests[-1]["body"]["messages"] if m["role"] == "tool"]
     assert len(answers) == 2 and "Не выполнено" in answers[1]["content"]
+    total = sum(len(str(m.get("content") or "")) for m in provider.requests[-1]["body"]["messages"])
+    assert total <= 6000
+
+
+def test_relative_date_orders_reach_the_tools(setup) -> None:
+    _, _, tools, _, _ = setup
+    for message in ("Запиши Веровского завтра", "Перенеси Веровского на послезавтра"):
+        assert tools.might_need_tools(message), message
+        names = {d["function"]["name"] for d in tools.definitions(message)}
+        assert "primavtodor_propose_change" in names, message
+
+
+def test_cached_and_error_answers_also_fit_the_remaining_room() -> None:
+    from yukiyasha.modules.ai.module import _fit
+
+    long_answer = "x" * 5000
+    assert _fit(long_answer, 1000).endswith("[ответ обрезан по размеру контекста]")
+    assert len(_fit(long_answer, 1000)) <= 1000
+    assert _fit(long_answer, 50) == ""  # too little room for anything useful (the caller says so)
+    assert _fit("short", 1000) == "short"
+
+
+def test_approving_a_proposal_and_a_direct_edit_take_turns(setup) -> None:
+    """The stale check and the change run under the lock a direct edit also needs."""
+    module, proposals, _, car, driver = setup
+    created = module.bookings.create(
+        {"vehicle_id": car["id"], "driver_id": driver["id"], "date_from": "2026-10-07",
+         "date_to": "2026-10-09", "kind": "trip"}
+    )  # fmt: skip
+    proposal = proposals.create(
+        operation="update", kind="bookings", record_id=created["id"],
+        payload={"date_to": "2026-10-10"},
+    )  # fmt: skip
+    module.bookings.update(created["id"], {**created, "date_to": "2026-10-11"})  # edited by hand
+
+    result = proposals.apply(str(proposal["id"]))
+
+    assert result["status"] == "stale"
+    assert module.bookings.record(created["id"])["values"]["date_to"] == "2026-10-11"

@@ -365,20 +365,21 @@ class Records:
         return self._view(entity, record, self._ctx())
 
     def update(self, kind: str, record_id: str, payload: dict[str, object]) -> dict[str, object]:
-        entity = self.entity(kind)
-        store = self._stores[kind]
-        existing = store.load(record_id)
-        values = self._clean(entity, payload, self._ctx(), own_id=record_id)
-        record = {
-            "id": record_id,
-            "created_at": existing.get("created_at") or _now(),
-            "updated_at": _now(),
-            **values,
-        }
-        if kind == KIND_EMPLOYEES:
-            record.update(self._histories(existing, record))
-        store.save(record, overwrite=True)
-        return self._view(entity, record, self._ctx())
+        with self.write_lock:  # a proposal being approved and a direct edit take turns
+            entity = self.entity(kind)
+            store = self._stores[kind]
+            existing = store.load(record_id)
+            values = self._clean(entity, payload, self._ctx(), own_id=record_id)
+            record = {
+                "id": record_id,
+                "created_at": existing.get("created_at") or _now(),
+                "updated_at": _now(),
+                **values,
+            }
+            if kind == KIND_EMPLOYEES:
+                record.update(self._histories(existing, record))
+            store.save(record, overwrite=True)
+            return self._view(entity, record, self._ctx())
 
     def delete(self, kind: str, record_id: str) -> None:
         self.entity(kind)

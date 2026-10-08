@@ -5,6 +5,7 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Fixed
+- Proposals and the assistant: approving a proposal runs its «still unchanged?» check and the change under the lock a direct edit also needs (no lost update); every tool answer, cached or not, is fitted to the context room that is left, with room kept for a «not run» answer to later calls; relative-date orders («Запиши Веровского завтра») reach the tools.
 - Assistant and schedule safety: a tool call whose result cannot fit in the remaining context is not executed (the model is told so); a question containing «бронь» cannot open proposal creation (a real booking verb is required); a booking and the deletion of its car or driver are serialized, so a booking never outlives them.
 - Assistant tools: the booking-verb list is defined once before both gates («Перенесём Веровского на 10»); tool answers across planning rounds share what is left of the context budget (cut with a note, never overflowing); an optional number argument given as null means its default instead of aborting the turn.
 - Assistant booking flows: one verb list now serves both the mutation gate and the terse-order route («Отмени/Сократи/Убери Веровского 9»); an identical tool call repeated by the model in a later planning round is answered from the first result instead of creating a second proposal; an update proposal describes the booking as it will be after the change (new car, new dates).

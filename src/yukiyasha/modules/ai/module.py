@@ -32,6 +32,7 @@ from yukiyasha.modules.manifest import ModuleManifest
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.version import get_version
 
+NOT_RUN = '{"error":"Не выполнено: нет места"}'  # answer to a call that did not fit
 MIN_TOOL_ROOM = 200  # characters; below this another tool answer is not worth asking for
 MAX_TOOL_ROUNDS = 3  # planning rounds per turn: read, then act on what was read
 PERSONA_PATH = "ai/persona.md"
@@ -422,17 +423,15 @@ class AiModule:
             if plan is None:
                 break
             enriched.append(plan.message)
-            for call in plan.calls:
+            for position, call in enumerate(plan.calls):
                 key = f"{call.name}:{json.dumps(call.arguments, sort_keys=True, default=str)}"
-                if key not in done:
-                    if room < MIN_TOOL_ROOM:
-                        # never run what the model could not be told the result of
-                        done[key] = json.dumps(
-                            {"error": "Не выполнено: контекст заполнен"}, ensure_ascii=False
-                        )
-                    else:
-                        done[key] = self._tools.execute(call.name, call.arguments, user_text)
-                content = _fit(done[key], room) if room >= MIN_TOOL_ROOM else done[key]
+                # every later call of the plan keeps room for at least a «not run» answer
+                usable = room - len(NOT_RUN) * (len(plan.calls) - position - 1)
+                if key not in done and usable >= MIN_TOOL_ROOM:
+                    done[key] = self._tools.execute(call.name, call.arguments, user_text)
+                # a call is never run unless the model can be told what came of it
+                content = _fit(done[key], usable) if key in done else ""
+                content = content or NOT_RUN
                 room -= len(content)
                 enriched.append(
                     {

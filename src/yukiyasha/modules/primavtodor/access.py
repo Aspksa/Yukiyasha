@@ -1,5 +1,6 @@
 """Permission-checked capability views of the Примавтодор module."""
 
+from contextlib import AbstractContextManager
 from datetime import date
 
 from yukiyasha.modules.permissions import PermissionBroker
@@ -81,6 +82,11 @@ class PrimavtodorReadAccess(_PrimavtodorAccess):
 
 class PrimavtodorWriteAccess(_PrimavtodorAccess):
     """Mutation surface reserved for the proposal executor, never the AI module."""
+
+    @property
+    def write_lock(self) -> AbstractContextManager[object]:
+        """Held by the proposal executor across «still unchanged?» and the change itself."""
+        return self._module.data.write_lock
 
     def validate(
         self,

@@ -269,3 +269,57 @@ def test_a_repeated_proposal_call_is_executed_once(setup, tmp_path: Path) -> Non
         turn.release()
 
     assert len([p for p in proposals.list_items() if p["status"] == "pending"]) == 1
+
+
+def test_a_null_days_argument_means_the_default_window(setup) -> None:
+    _, _, tools, _, _ = setup
+    result = call(tools, "primavtodor_schedule", {"days": None, "day": None}, "график")
+    assert "error" not in result and result["bookings_total"] == 0
+    listing = call(tools, "primavtodor_list_records", {"kind": "vehicles", "limit": None}, "машины")
+    assert "error" not in listing
+
+
+def test_the_verb_set_is_defined_once_and_matches_both_gates() -> None:
+    import re
+
+    from yukiyasha.modules.ai import tools as module
+
+    source = Path(module.__file__).read_text(encoding="utf-8")
+    assert len(re.findall(r"^BOOKING_VERBS = ", source, re.MULTILINE)) == 1
+    for message in ("Перенесём Веровского на 10", "Перенеси Веровского на 10"):
+        assert module.BUSINESS_TRIGGER.search(message), message
+        assert module.MUTATION_TRIGGER.search(message), message
+
+
+def test_tool_answers_never_overflow_the_context_across_rounds(setup, tmp_path: Path) -> None:
+    from tests.fake_provider import FakeProvider
+    from yukiyasha.config import AiSettings
+    from yukiyasha.modules.ai import AiModule
+
+    module, _, tools, car, driver = setup
+    for day in range(1, 29):  # a long schedule: the answer is several thousand characters
+        module.bookings.create(
+            {"vehicle_id": car["id"], "driver_id": driver["id"], "kind": "trip",
+             "date_from": f"2026-11-{day:02d}", "date_to": f"2026-11-{day:02d}"}
+        )  # fmt: skip
+
+    def read(call_id: str, days: int) -> dict:
+        arguments = json.dumps({"day": "2026-11-01", "days": days})
+        return {"id": call_id, "type": "function",
+                "function": {"name": "primavtodor_schedule", "arguments": arguments}}  # fmt: skip
+
+    rounds = [[read("a", 31)], [read("b", 30)], [read("c", 29)]]
+    with FakeProvider(chunks=["ok"], tool_rounds=rounds) as provider:
+        disk = DiskModule(tmp_path / "ai-disk")
+        disk.start()
+        settings = AiSettings(
+            base_url=provider.base_url, model="m", api_key="k", max_context_chars=9000
+        )
+        assistant = AiModule(disk, settings, tools=tools)
+        assistant.start()
+        turn = assistant.begin_chat(None, "Покажи график машин")
+        list(turn.events())
+        turn.release()
+
+    final = provider.requests[-1]["body"]["messages"]
+    assert sum(len(str(m.get("content") or "")) for m in final) <= 9000

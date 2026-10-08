@@ -5,6 +5,7 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Fixed
+- Assistant tools: the booking-verb list is defined once before both gates («Перенесём Веровского на 10»); tool answers across planning rounds share what is left of the context budget (cut with a note, never overflowing); an optional number argument given as null means its default instead of aborting the turn.
 - Assistant booking flows: one verb list now serves both the mutation gate and the terse-order route («Отмени/Сократи/Убери Веровского 9»); an identical tool call repeated by the model in a later planning round is answered from the first result instead of creating a second proposal; an update proposal describes the booking as it will be after the change (new car, new dates).
 - Short booking orders such as «Запиши Веровского 7-9» or «Отмени бронь» now reach the schedule tools of the assistant; unrelated chat («Запиши мой номер») still does not.
 - The assistant plans tools in up to three rounds per turn, so a request like «запиши Веровского 7-9» can read the parsed booking first and then propose it; the booking text in a proposal is built from the normalized values; a timesheet file whose marks are all broken dates no longer crashes the schedule.

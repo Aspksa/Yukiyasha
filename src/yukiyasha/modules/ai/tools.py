@@ -26,7 +26,7 @@ DOCUMENT_TRIGGER = re.compile(
 )
 # verbs that book, move or cancel a trip; both the mutation gate and the terse-order route use them
 BOOKING_VERBS = (
-    "запиши|поставь|отметь|запланируй|забронируй|перенеси|сдвинь|продли|сократи|"
+    "запиши|поставь|отметь|запланируй|забронируй|перенеси|перенес[её]м|сдвинь|продли|сократи|"
     "отмени|убери"
 )
 BUSINESS_TRIGGER = re.compile(
@@ -51,11 +51,6 @@ FORGET_TRIGGER = re.compile(
     r"\bзабудь\b|\bудали (?:это )?из памяти\b|\bне помни\b",
     re.IGNORECASE,
 )
-# verbs that book, move or cancel a trip; both the mutation gate and the terse-order route use them
-BOOKING_VERBS = (
-    "запиши|поставь|отметь|запланируй|забронируй|перенеси|перенес[её]м|сдвинь|продли|сократи|"
-    "отмени|убери"
-)
 MUTATION_TRIGGER = re.compile(
     r"создай|добавь|измени|обнови|исправь|удали|оформи|закрой|назначь|"
     + BOOKING_VERBS
@@ -68,6 +63,15 @@ DOCUMENT_SECTIONS = ("contracts", "invoice_offer", "memos", "orders", "directive
 MAX_LIST_ITEMS = 20
 MAX_TIMESHEET_ROWS = 20
 MAX_MEMORY_RESULTS = 8
+
+
+def _int(arguments: dict[str, object], key: str, default: int, low: int, high: int) -> int:
+    """An optional integer argument: missing, null or not a number means the default."""
+    try:
+        value = int(arguments.get(key))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(value, high))
 
 
 def _masked(value: Any, key: str | None = None) -> Any:
@@ -479,8 +483,7 @@ class AiToolRegistry:
 
     def _list_records(self, arguments: dict[str, object]) -> dict[str, object]:
         kind = self._kind(arguments)
-        raw_limit = arguments.get("limit", MAX_LIST_ITEMS)
-        limit = max(1, min(int(raw_limit), MAX_LIST_ITEMS))
+        limit = _int(arguments, "limit", MAX_LIST_ITEMS, 1, MAX_LIST_ITEMS)
         result = self._primavtodor.list_records(kind)
         records = result.get("records")
         items = records if isinstance(records, list) else []
@@ -547,7 +550,7 @@ class AiToolRegistry:
         section_id = str(arguments.get("section_id", ""))
         if section_id not in DOCUMENT_SECTIONS:
             raise ValueError("Неизвестный раздел документов")
-        limit = max(1, min(int(arguments.get("limit", 10)), 20))
+        limit = _int(arguments, "limit", 10, 1, 20)
         documents = self._primavtodor.list_documents(section_id, limit=limit)
         return {"section_id": section_id, "documents": documents}
 
@@ -558,7 +561,7 @@ class AiToolRegistry:
     def _schedule(self, arguments: dict[str, object]) -> dict[str, object]:
         raw_day = str(arguments.get("day") or "")
         day = date.fromisoformat(raw_day) if raw_day else None
-        days = max(1, min(int(arguments.get("days", 7)), 31))
+        days = _int(arguments, "days", 7, 1, 31)
         view = self._primavtodor.schedule(day, days)
         keep = ("id", "vehicle", "driver", "span", "kind_label", "note", "conflicts")
         free = view["free"]
@@ -617,7 +620,7 @@ class AiToolRegistry:
         query = str(arguments.get("query", "")).strip()
         if not query:
             raise ValueError("Пустой запрос к памяти")
-        limit = max(1, min(int(arguments.get("limit", 5)), MAX_MEMORY_RESULTS))
+        limit = _int(arguments, "limit", 5, 1, MAX_MEMORY_RESULTS)
         items = self._memory.search(query, limit=limit)
         return {"count": len(items), "memories": items}
 

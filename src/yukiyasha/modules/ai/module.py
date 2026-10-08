@@ -32,6 +32,7 @@ from yukiyasha.modules.manifest import ModuleManifest
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.version import get_version
 
+MIN_TOOL_ROOM = 200  # characters; below this another tool answer is not worth asking for
 MAX_TOOL_ROUNDS = 3  # planning rounds per turn: read, then act on what was read
 PERSONA_PATH = "ai/persona.md"
 CHATS_DIR = "ai/chats"
@@ -172,6 +173,15 @@ class ChatTurn:
         if close is not None:
             close()
         self._slot.release()
+
+
+def _fit(content: str, room: int) -> str:
+    """A tool answer cut to the room that is left, so later rounds never overflow the context."""
+    if len(content) <= max(room, 0):
+        return content
+    if room < MIN_TOOL_ROOM:
+        return ""  # a few characters of JSON would only mislead the model
+    return content[: room - 60] + " …[ответ обрезан по размеру контекста]"
 
 
 class AiModule:
@@ -400,9 +410,14 @@ class AiModule:
         documents: list[dict[str, object]] = []
         seen_paths: set[str] = set()
         done: dict[str, str] = {}  # an identical call is answered, never executed twice
+        # tool answers share what is left of the context after the persona, history and message
+        used = sum(len(str(message.get("content") or "")) for message in context)
+        room = self.settings.max_context_chars - used
         # A request like «запиши Веровского 7-9» needs the answer of one tool (the parsed
         # booking) before the next call (the proposal), so planning repeats a few rounds.
         for _ in range(MAX_TOOL_ROUNDS):
+            if room < MIN_TOOL_ROOM:
+                break  # nothing useful fits any more
             plan = planner(enriched, self._tools.definitions(user_text))
             if plan is None:
                 break
@@ -411,7 +426,8 @@ class AiModule:
                 key = f"{call.name}:{json.dumps(call.arguments, sort_keys=True, default=str)}"
                 if key not in done:
                     done[key] = self._tools.execute(call.name, call.arguments, user_text)
-                content = done[key]
+                content = _fit(done[key], room)
+                room -= len(content)
                 enriched.append(
                     {
                         "role": "tool",

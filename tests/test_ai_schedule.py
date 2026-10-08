@@ -148,3 +148,54 @@ def test_a_long_schedule_says_it_was_cut(setup) -> None:
 
     assert result["bookings_total"] == 56 and result["bookings_truncated"] is True
     assert len(result["bookings"]) == 40
+
+
+def test_parse_then_propose_in_one_turn(setup, tmp_path: Path) -> None:
+    """«Запиши Веровского 7-9»: the proposal needs the answer of the parser first."""
+    from tests.fake_provider import FakeProvider
+    from yukiyasha.config import AiSettings
+    from yukiyasha.modules.ai import AiModule
+
+    module, proposals, tools, car, driver = setup
+    values = {
+        "vehicle_id": car["id"], "driver_id": driver["id"], "date_from": "2026-10-07",
+        "date_to": "2026-10-09", "kind": "trip", "note": "",
+    }  # fmt: skip
+    parse = {"id": "c1", "type": "function", "function": {
+        "name": "primavtodor_parse_booking", "arguments": json.dumps({"text": "Веровский 7-9"})}}
+    propose = {"id": "c2", "type": "function", "function": {
+        "name": "primavtodor_propose_change", "arguments": json.dumps(
+            {"operation": "create", "kind": "bookings", "payload": values})}}  # fmt: skip
+
+    with FakeProvider(chunks=["Предложила."], tool_rounds=[[parse], [propose]]) as provider:
+        disk = DiskModule(tmp_path / "ai-disk")
+        disk.start()
+        assistant = AiModule(
+            disk,
+            AiSettings(base_url=provider.base_url, model="m", api_key="k"),
+            tools=tools,
+        )
+        assistant.start()
+        turn = assistant.begin_chat(None, "Запиши Веровского в командировку 7-9")
+        events = list(turn.events())
+        turn.release()
+
+    assert events[-1]["type"] == "done"
+    pending = [p for p in proposals.list_items() if p["status"] == "pending"]
+    assert len(pending) == 1 and pending[0]["kind"] == "bookings"
+    assert pending[0]["payload"]["date_to"] == "2026-10-09"
+
+
+def test_the_summary_is_built_from_the_normalized_booking(setup) -> None:
+    _, _, tools, car, driver = setup
+    payload = {"vehicle_id": car["id"], "driver_id": driver["id"], "date_from": "2026-10-07"}
+    proposal = call(
+        tools,
+        "primavtodor_propose_change",
+        {"operation": "create", "kind": "bookings", "payload": payload},
+        "Запиши выезд",
+    )
+
+    assert "None" not in proposal["reason"]
+    assert "07.10.2026" in proposal["reason"] and "Командировка" in proposal["reason"]
+    assert proposal["payload"]["date_to"] == "2026-10-07"

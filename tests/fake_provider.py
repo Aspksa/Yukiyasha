@@ -15,12 +15,16 @@ class FakeProvider:
         plain_json=False,
         error_body=None,
         tool_calls=None,
+        tool_rounds=None,
     ):
         self.chunks = list(chunks)
         self.status = status
         self.plain_json = plain_json
         self.error_body = error_body
         self.tool_calls = tool_calls
+        if tool_rounds is None and tool_calls is not None:
+            tool_rounds = [tool_calls]  # the calls are asked for once; then the model answers
+        self.tool_rounds = list(tool_rounds) if tool_rounds is not None else None
         self.requests: list[dict] = []
         provider = self
 
@@ -35,6 +39,10 @@ class FakeProvider:
                     {"path": self.path, "auth": self.headers.get("Authorization"), "body": body}
                 )
                 if body.get("tools") is not None:
+                    if provider.tool_rounds is not None:  # one answer per planning round
+                        calls = provider.tool_rounds.pop(0) if provider.tool_rounds else []
+                    else:
+                        calls = provider.tool_calls or []
                     payload = json.dumps(
                         {
                             "choices": [
@@ -42,7 +50,7 @@ class FakeProvider:
                                     "message": {
                                         "role": "assistant",
                                         "content": None,
-                                        "tool_calls": provider.tool_calls or [],
+                                        "tool_calls": calls,
                                     }
                                 }
                             ]

@@ -241,3 +241,17 @@ def test_a_broken_date_in_the_timesheet_file_does_not_break_the_schedule(
     view = module.bookings.overview(date(2026, 10, 5), 7, date(2026, 10, 8))
 
     assert [a["name"] for a in view["absent_now"]] == [driver["values"]["full_name"]]
+
+
+def test_a_timesheet_file_with_only_broken_dates_does_not_break_the_schedule(
+    module: PrimavtodorModule,
+) -> None:
+    car = make_vehicle(module, plate="Х1", model="Hino")
+    driver = make_driver(module, car["id"])
+    path = module._disk.root / "projects/work/Примавтодор/Табель/2026-10.json"
+    marks = {driver["id"]: {"не-дата": "Б"}}
+    path.write_text(json.dumps({"month": "2026-10", "marks": marks}, ensure_ascii=False), "utf-8")
+
+    view = module.bookings.overview(date(2026, 10, 5), 7, date(2026, 10, 8))
+
+    assert view["absent_now"] == []

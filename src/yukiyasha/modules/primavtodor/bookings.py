@@ -153,7 +153,15 @@ class Bookings:
         }
 
     def describe(self, values: dict[str, object]) -> str:
-        """«Веровский И. · С303СС · 07.10.2026 – 09.10.2026 · Командировка»."""
+        """«Веровский И. · С303СС · 07.10.2026 – 09.10.2026 · Командировка».
+
+        Values are normalized first (an omitted end date is the start date, an omitted type is a
+        trip), so the text matches what approving the booking will really store.
+        """
+        try:
+            values = self._clean(values)
+        except RecordValidationError:
+            pass  # an invalid payload is described as given; the proposal will reject it anyway
         drivers = {str(r["id"]): r for r in self._data.snapshot(KIND_EMPLOYEES)}
         vehicles = {str(r["id"]): r for r in self._data.snapshot(KIND_VEHICLES)}
         driver = drivers.get(str(values.get("driver_id") or ""))

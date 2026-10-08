@@ -32,6 +32,7 @@ from yukiyasha.modules.manifest import ModuleManifest
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.version import get_version
 
+MAX_TOOL_ROUNDS = 3  # planning rounds per turn: read, then act on what was read
 PERSONA_PATH = "ai/persona.md"
 CHATS_DIR = "ai/chats"
 CHAT_ID_RE = re.compile(r"^chat-[0-9a-f]{8}$")
@@ -395,31 +396,37 @@ class AiModule:
         planner = getattr(provider, "plan_tools", None)
         if not callable(planner):
             return context, []
-        plan = planner(context, self._tools.definitions(user_text))
-        if plan is None:
-            return context, []
-        enriched = [*context, plan.message]
+        enriched = list(context)
         documents: list[dict[str, object]] = []
         seen_paths: set[str] = set()
-        for call in plan.calls:
-            content = self._tools.execute(
-                call.name,
-                call.arguments,
-                user_text,
-            )
-            enriched.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": call.id,
-                    "name": call.name,
-                    "content": content,
-                }
-            )
-            for document in _document_refs(call.name, content):
-                path = str(document.get("path", ""))
-                if path and path not in seen_paths:
-                    seen_paths.add(path)
-                    documents.append(document)
+        # A request like «запиши Веровского 7-9» needs the answer of one tool (the parsed
+        # booking) before the next call (the proposal), so planning repeats a few rounds.
+        for _ in range(MAX_TOOL_ROUNDS):
+            plan = planner(enriched, self._tools.definitions(user_text))
+            if plan is None:
+                break
+            enriched.append(plan.message)
+            for call in plan.calls:
+                content = self._tools.execute(
+                    call.name,
+                    call.arguments,
+                    user_text,
+                )
+                enriched.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "content": content,
+                    }
+                )
+                for document in _document_refs(call.name, content):
+                    path = str(document.get("path", ""))
+                    if path and path not in seen_paths:
+                        seen_paths.add(path)
+                        documents.append(document)
+        if len(enriched) == len(context):
+            return context, []
         return enriched, documents
 
     def begin_chat(self, chat_id: str | None, message: str) -> ChatTurn:

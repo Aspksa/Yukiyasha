@@ -1,5 +1,6 @@
 """График машин: trips and busy days per car, overlaps shown but never forbidden."""
 
+import json
 from datetime import date
 from pathlib import Path
 
@@ -207,3 +208,89 @@ def test_tomorrow_service_and_conflict_preview(module, crew) -> None:
 
     service = module.bookings.parse("хино 12-13 ремонт", TODAY)
     assert service["ok"] and service["values"]["kind"] == "service"
+
+
+def test_a_car_or_driver_with_bookings_cannot_be_deleted(module: PrimavtodorModule) -> None:
+    from yukiyasha.modules.primavtodor import RecordInUseError
+
+    car = make_vehicle(module, plate="Х1", model="Hino")
+    driver = make_driver(module, car["id"])
+    created = book(module, car, driver, "2026-10-07", "2026-10-09")
+
+    for kind, record in (("vehicles", car), ("employees", driver)):
+        with pytest.raises(RecordInUseError) as raised:
+            module.data.delete(kind, record["id"])
+        assert any("выезд" in text for text in raised.value.references)
+
+    module.bookings.delete(created["id"])
+    module.data.delete("employees", driver["id"])  # nothing holds it any more
+
+
+def test_a_broken_date_in_the_timesheet_file_does_not_break_the_schedule(
+    module: PrimavtodorModule,
+) -> None:
+    car = make_vehicle(module, plate="Х1", model="Hino")
+    driver = make_driver(module, car["id"])
+    path = module._disk.root / "projects/work/Примавтодор/Табель/2026-10.json"
+    marks = {"не-дата": "Б", "2026-10-08": "Б"}
+    path.write_text(
+        json.dumps({"month": "2026-10", "marks": {driver["id"]: marks}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    view = module.bookings.overview(date(2026, 10, 5), 7, date(2026, 10, 8))
+
+    assert [a["name"] for a in view["absent_now"]] == [driver["values"]["full_name"]]
+
+
+def test_a_timesheet_file_with_only_broken_dates_does_not_break_the_schedule(
+    module: PrimavtodorModule,
+) -> None:
+    car = make_vehicle(module, plate="Х1", model="Hino")
+    driver = make_driver(module, car["id"])
+    path = module._disk.root / "projects/work/Примавтодор/Табель/2026-10.json"
+    marks = {driver["id"]: {"не-дата": "Б"}}
+    path.write_text(json.dumps({"month": "2026-10", "marks": marks}, ensure_ascii=False), "utf-8")
+
+    view = module.bookings.overview(date(2026, 10, 5), 7, date(2026, 10, 8))
+
+    assert view["absent_now"] == []
+
+
+def _race(module: PrimavtodorModule, number: int) -> dict[str, bool]:
+    """Delete a car while a booking for it is being created; report what each side achieved."""
+    import threading
+
+    from yukiyasha.modules.primavtodor import RecordInUseError, RecordValidationError
+
+    car = make_vehicle(module, plate=f"Х{number}", model="Hino")
+    person = {"full_name": f"Тест {number}", "is_driver": True}
+    driver = module.data.create("employees", person)
+    outcome = {"deleted": False, "booked": False}
+
+    def delete() -> None:
+        try:
+            module.data.delete("vehicles", car["id"])
+            outcome["deleted"] = True
+        except RecordInUseError:
+            pass
+
+    def create() -> None:
+        try:
+            book(module, car, driver, "2026-10-07", "2026-10-08")
+            outcome["booked"] = True
+        except RecordValidationError:
+            pass
+
+    threads = [threading.Thread(target=delete), threading.Thread(target=create)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return outcome
+
+
+def test_a_booking_never_outlives_the_car_it_was_created_for(module: PrimavtodorModule) -> None:
+    for number in range(25):
+        outcome = _race(module, number)
+        assert not (outcome["deleted"] and outcome["booked"]), number

@@ -30,6 +30,8 @@
     fuel_liters: "Топливо, л",
     season: "Сезон",
     status: "Статус",
+    kind: "Тип",
+    note: "Заметка",
   };
 
   const STATUS_LABELS = {
@@ -50,6 +52,7 @@
     employees: "Сотрудники",
     waybills: "Путевые листы",
     fuel: "ГСМ",
+    bookings: "График машин",
   };
 
   function equalValue(left, right) {

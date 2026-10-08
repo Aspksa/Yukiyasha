@@ -31,6 +31,7 @@ BOOKING_KINDS = (
     ("service", "Ремонт / ТО"),
 )
 _KIND_LABELS = dict(BOOKING_KINDS)
+_VALUE_KEYS = ("vehicle_id", "driver_id", "date_from", "date_to", "kind", "note")
 ABSENCE_LABELS = {"Б": "на больничном", "ОТ": "в отпуске"}
 PADDING_DAYS = 45  # look this far past the window to say when a leave ends
 MAX_WINDOW_DAYS = 62
@@ -46,6 +47,11 @@ _ENTITY = Entity(
     fields=(),
     columns=(),
 )
+
+
+def _short_name(name: str) -> str:
+    last, _, rest = name.partition(" ")
+    return f"{last} {rest[0]}." if rest else last
 
 
 def _day(raw: object, name: str, errors: dict[str, str]) -> date | None:
@@ -109,25 +115,76 @@ class Bookings:
         }
 
     def create(self, payload: dict[str, object]) -> dict[str, object]:
-        values = self._clean(payload)
-        now = _now()
-        record = {"id": self._store.new_id(), "created_at": now, "updated_at": now, **values}
-        self._store.save(record, overwrite=False)
+        with self._data.write_lock:  # the car and driver must still exist when it is saved
+            values = self._clean(payload)
+            now = _now()
+            record = {"id": self._store.new_id(), "created_at": now, "updated_at": now, **values}
+            self._store.save(record, overwrite=False)
         return self._view(record, self._all())
 
     def update(self, record_id: str, payload: dict[str, object]) -> dict[str, object]:
-        existing = self._store.load(record_id)
-        record = {
-            "id": record_id,
-            "created_at": existing.get("created_at") or _now(),
-            "updated_at": _now(),
-            **self._clean(payload),
-        }
-        self._store.save(record, overwrite=True)
+        with self._data.write_lock:
+            existing = self._store.load(record_id)
+            record = {
+                "id": record_id,
+                "created_at": existing.get("created_at") or _now(),
+                "updated_at": _now(),
+                **self._clean(payload),
+            }
+            self._store.save(record, overwrite=True)
         return self._view(record, self._all())
 
     def delete(self, record_id: str) -> None:
         self._store.delete(record_id)
+
+    # ----- the shape the proposal system works with -----
+
+    def validate(self, payload: dict[str, object]) -> dict[str, object]:
+        return self._clean(payload)
+
+    def record(self, record_id: str) -> dict[str, object]:
+        """One booking as ``{id, kind, label, values, updated_at}``."""
+        stored = self._store.load(record_id)
+        values = {key: stored.get(key) for key in _VALUE_KEYS}
+        return {
+            "id": record_id,
+            "kind": KIND_BOOKINGS,
+            "label": self.describe(values),
+            "values": values,
+            "updated_at": stored.get("updated_at"),
+        }
+
+    def describe(self, values: dict[str, object]) -> str:
+        """«Веровский И. · С303СС · 07.10.2026 – 09.10.2026 · Командировка».
+
+        Values are normalized first (an omitted end date is the start date, an omitted type is a
+        trip), so the text matches what approving the booking will really store.
+        """
+        try:
+            values = self._clean(values)
+        except RecordValidationError:
+            pass  # an invalid payload is described as given; the proposal will reject it anyway
+        drivers = {str(r["id"]): r for r in self._data.snapshot(KIND_EMPLOYEES)}
+        vehicles = {str(r["id"]): r for r in self._data.snapshot(KIND_VEHICLES)}
+        driver = drivers.get(str(values.get("driver_id") or ""))
+        vehicle = vehicles.get(str(values.get("vehicle_id") or ""))
+        who = _short_name(str(driver["full_name"])) if driver else ""
+        span = self._span({"date_from": values.get("date_from"), "date_to": values.get("date_to")})
+        parts = [
+            who,
+            str(vehicle["plate"]) if vehicle else "",
+            span,
+            _KIND_LABELS.get(str(values.get("kind")), ""),
+            str(values.get("note") or ""),
+        ]
+        return " · ".join(part for part in parts if part)
+
+    def references(self, kind: str, record_id: str) -> list[str]:
+        """Bookings that stop a car or a driver from being deleted."""
+        key = {KIND_VEHICLES: "vehicle_id", KIND_EMPLOYEES: "driver_id"}.get(kind)
+        if key is None:
+            return []
+        return [f"выезд {self._span(r)}" for r in self._all() if r.get(key) == record_id]
 
     # ----- views -----
 

@@ -4,7 +4,24 @@ All notable changes to Yukiyasha are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- Proposals and the assistant: approving a proposal runs its «still unchanged?» check and the change under the lock a direct edit also needs (no lost update); every tool answer, cached or not, is fitted to the context room that is left, with room kept for a «not run» answer to later calls; relative-date orders («Запиши Веровского завтра») reach the tools.
+- Assistant and schedule safety: a tool call whose result cannot fit in the remaining context is not executed (the model is told so); a question containing «бронь» cannot open proposal creation (a real booking verb is required); a booking and the deletion of its car or driver are serialized, so a booking never outlives them.
+- Assistant tools: the booking-verb list is defined once before both gates («Перенесём Веровского на 10»); tool answers across planning rounds share what is left of the context budget (cut with a note, never overflowing); an optional number argument given as null means its default instead of aborting the turn.
+- Assistant booking flows: one verb list now serves both the mutation gate and the terse-order route («Отмени/Сократи/Убери Веровского 9»); an identical tool call repeated by the model in a later planning round is answered from the first result instead of creating a second proposal; an update proposal describes the booking as it will be after the change (new car, new dates).
+- Short booking orders such as «Запиши Веровского 7-9» or «Отмени бронь» now reach the schedule tools of the assistant; unrelated chat («Запиши мой номер») still does not.
+- The assistant plans tools in up to three rounds per turn, so a request like «запиши Веровского 7-9» can read the parsed booking first and then propose it; the booking text in a proposal is built from the normalized values; a timesheet file whose marks are all broken dates no longer crashes the schedule.
+- A car or driver with bookings in the schedule can no longer be deleted (the booking would have
+  vanished from the grid); a hand-edited timesheet file with a broken date no longer breaks the
+  schedule; two statement loads at once (inbox scans or an upload) are now serialized, so a statement is never imported twice; a month above 12
+  in a quick line («7.13») is not read as January.
+
 ### Added
+- **The assistant knows the schedule.** New read tools: the summary for today, the schedule with
+  who is free on a day (leave and sick days from the timesheet included) and a reader of one
+  typed line («Веровский 7-9 командировка»). Booking, moving or removing a trip goes through the
+  usual proposal: the assistant only proposes, the person approves; the proposal text reads
+  «Веровский И. · С303СС · 07.10.2026 – 09.10.2026 · Командировка».
 - **График машин, second pass:** bookings can be dragged to other days or another car and
   stretched by their edges (a conflict is flagged, never refused); gradient bars with the driver's
   initials, a «сегодня» marker and a highlighted today column, week separators, a sticky header,

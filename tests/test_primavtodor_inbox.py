@@ -73,3 +73,23 @@ def test_a_broken_file_does_not_stop_the_others(setup) -> None:
     statuses = {f["name"]: f["status"] for f in module.fuel_inbox_scan()["files"]}
 
     assert statuses == {"a-сломан.xlsx": "failed", "b-хороший.xlsx": "loaded"}
+
+
+def test_two_scans_at_once_load_a_statement_only_once(setup) -> None:
+    import threading
+
+    disk, module = setup
+    prepare(module)
+    rows = statement_rows((CARD, [("07.10.2026", "09:17:16", PETROL, 70.5, 40.0)]))
+    drop(disk, "выписка.xlsx", xlsx(rows))
+
+    results: list[dict] = []
+    scan = lambda: results.append(module.fuel_inbox_scan())  # noqa: E731
+    threads = [threading.Thread(target=scan) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(module.data.snapshot("fuel")) == 1
+    assert sum(r["loaded"] for r in results) == 1

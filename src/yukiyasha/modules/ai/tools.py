@@ -3,6 +3,7 @@
 import json
 import re
 from collections.abc import Callable
+from datetime import date
 from typing import Any
 
 from yukiyasha.modules.audit import AuditLog
@@ -23,10 +24,19 @@ DOCUMENT_TRIGGER = re.compile(
     r"документ|договор|сч[её]т|оферт|служебн|записк|приказ|распоряж",
     re.IGNORECASE,
 )
+# verbs that book, move or cancel a trip; both the mutation gate and the terse-order route use them
+BOOKING_VERBS = (
+    "запиши|поставь|отметь|запланируй|забронируй|перенеси|перенес[её]м|сдвинь|продли|сократи|"
+    "отмени|убери"
+)
 BUSINESS_TRIGGER = re.compile(
     r"примавтодор|путев|водител|сотрудник|машин|автомоб|гараж|гсм|топлив|заправ|"
     r"табел|пробег|расход|норм[аы]|одометр|документ|договор|сч[её]т|оферт|служебн|"
-    r"записк|приказ|распоряж",
+    r"записк|приказ|распоряж|график|командиров|свободн|отъезд|выезд|больнич|отпуск|"
+    r"сводк|занят|поездк|брон|"
+    # «Запиши Веровского 7-9»: a short booking order has a name and a date, nothing else
+    r"\b(?:" + BOOKING_VERBS + r")(?:\s+\S+){1,4}?\s+(?:с\s+|до\s+|на\s+)?"
+    r"(?:\d{1,2}\b|сегодня|завтра|послезавтра)",
     re.IGNORECASE,
 )
 MEMORY_TRIGGER = re.compile(
@@ -44,14 +54,25 @@ FORGET_TRIGGER = re.compile(
 )
 MUTATION_TRIGGER = re.compile(
     r"создай|добавь|измени|обнови|исправь|удали|оформи|закрой|назначь|"
-    r"предложи измен|подготовь измен",
+    + BOOKING_VERBS
+    + r"|предложи измен|подготовь измен",
     re.IGNORECASE,
 )
 KINDS = ("waybills", "fuel", "employees", "vehicles")
+PROPOSAL_KINDS = (*KINDS, "bookings")  # bookings = the vehicle schedule
 DOCUMENT_SECTIONS = ("contracts", "invoice_offer", "memos", "orders", "directives")
 MAX_LIST_ITEMS = 20
 MAX_TIMESHEET_ROWS = 20
 MAX_MEMORY_RESULTS = 8
+
+
+def _int(arguments: dict[str, object], key: str, default: int, low: int, high: int) -> int:
+    """An optional integer argument: missing, null or not a number means the default."""
+    try:
+        value = int(arguments.get(key))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(value, high))
 
 
 def _masked(value: Any, key: str | None = None) -> Any:
@@ -85,6 +106,9 @@ class AiToolRegistry:
             "primavtodor_timesheet": self._timesheet,
             "primavtodor_settings": self._settings,
             "primavtodor_month_review": self._month_review,
+            "primavtodor_briefing": self._briefing,
+            "primavtodor_schedule": self._schedule,
+            "primavtodor_parse_booking": self._parse_booking,
             "primavtodor_list_documents": self._list_documents,
         }
         if proposals is not None:
@@ -173,7 +197,9 @@ class AiToolRegistry:
     def _audit_metadata(
         self, name: str, arguments: dict[str, object]
     ) -> dict[str, object]:
-        allowed = {"kind", "record_id", "month", "employee_id", "section_id", "limit"}
+        allowed = {
+            "kind", "record_id", "month", "employee_id", "section_id", "limit", "day", "days",
+        }  # fmt: skip
         metadata = {key: value for key, value in arguments.items() if key in allowed}
         if name == "memory_remember":
             metadata["content_stored"] = True
@@ -264,6 +290,59 @@ class AiToolRegistry:
             {
                 "type": "function",
                 "function": {
+                    "name": "primavtodor_briefing",
+                    "description": (
+                        "Сводка на сегодня: кто в отъезде, кто выезжает завтра, больничные и "
+                        "отпуска, незакрытые путевые листы, выписки во «Входящих», замечания "
+                        "месяца. Только чтение."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "primavtodor_schedule",
+                    "description": (
+                        "График машин: выезды (водитель, машина, даты, тип) и кто свободен в "
+                        "выбранный день, кто на больничном или в отпуске по табелю. "
+                        "Только чтение."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "day": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+                            "days": {"type": "integer", "minimum": 1, "maximum": 31},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "primavtodor_parse_booking",
+                    "description": (
+                        "Разобрать фразу вроде «Веровский 7-9 командировка Находка» в выезд: "
+                        "водитель, машина, даты, тип и что осталось неясным. Ничего не "
+                        "сохраняет; для записи затем создай предложение изменения "
+                        "(kind=bookings) из полученных values."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"text": {"type": "string", "maxLength": 300}},
+                        "required": ["text"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "primavtodor_settings",
                     "description": (
                         "Получить текущий сезон и настройки Примавтодора. Только чтение."
@@ -316,9 +395,16 @@ class AiToolRegistry:
                             "type": "string",
                             "enum": ["create", "update", "delete"],
                         },
-                        "kind": {"type": "string", "enum": list(KINDS)},
+                        "kind": {"type": "string", "enum": list(PROPOSAL_KINDS)},
                         "record_id": {"type": "string"},
-                        "payload": {"type": "object"},
+                        "payload": {
+                            "type": "object",
+                            "description": (
+                                "Значения полей. Для kind=bookings: vehicle_id, driver_id, "
+                                "date_from, date_to (ГГГГ-ММ-ДД), kind (trip | busy | service), "
+                                "note; готовые значения даёт primavtodor_parse_booking."
+                            ),
+                        },
                         "reason": {"type": "string"},
                     },
                     "required": ["operation", "kind"],
@@ -398,8 +484,7 @@ class AiToolRegistry:
 
     def _list_records(self, arguments: dict[str, object]) -> dict[str, object]:
         kind = self._kind(arguments)
-        raw_limit = arguments.get("limit", MAX_LIST_ITEMS)
-        limit = max(1, min(int(raw_limit), MAX_LIST_ITEMS))
+        limit = _int(arguments, "limit", MAX_LIST_ITEMS, 1, MAX_LIST_ITEMS)
         result = self._primavtodor.list_records(kind)
         records = result.get("records")
         items = records if isinstance(records, list) else []
@@ -466,14 +551,59 @@ class AiToolRegistry:
         section_id = str(arguments.get("section_id", ""))
         if section_id not in DOCUMENT_SECTIONS:
             raise ValueError("Неизвестный раздел документов")
-        limit = max(1, min(int(arguments.get("limit", 10)), 20))
+        limit = _int(arguments, "limit", 10, 1, 20)
         documents = self._primavtodor.list_documents(section_id, limit=limit)
         return {"section_id": section_id, "documents": documents}
+
+    def _briefing(self, arguments: dict[str, object]) -> dict[str, object]:
+        del arguments
+        return self._primavtodor.briefing()
+
+    def _schedule(self, arguments: dict[str, object]) -> dict[str, object]:
+        raw_day = str(arguments.get("day") or "")
+        day = date.fromisoformat(raw_day) if raw_day else None
+        days = _int(arguments, "days", 7, 1, 31)
+        view = self._primavtodor.schedule(day, days)
+        keep = ("id", "vehicle", "driver", "span", "kind_label", "note", "conflicts")
+        free = view["free"]
+        rows = view["bookings"]
+        limit = MAX_LIST_ITEMS * 2
+        return {
+            "from": view["start"],
+            "to": view["end"],
+            "bookings_total": len(rows),  # type: ignore[arg-type]
+            "bookings_truncated": len(rows) > limit,  # type: ignore[arg-type]
+            "bookings": [{key: row[key] for key in keep} for row in rows[:limit]],  # type: ignore[index]
+            "free_on": free["day"],  # type: ignore[index]
+            "free_vehicles": [
+                {"id": v["id"], "plate": v["plate"], "model": v["model"], "next": v["next"]}
+                for v in free["vehicles"]  # type: ignore[index]
+            ],
+            "free_drivers": [
+                {"id": d["id"], "name": d["name"], "next": d["next"]}
+                for d in free["drivers"]  # type: ignore[index]
+            ],
+            "absent": free["absent"],  # type: ignore[index]
+        }
+
+    def _parse_booking(self, arguments: dict[str, object]) -> dict[str, object]:
+        text = str(arguments.get("text", "")).strip()[:300]
+        if not text:
+            raise ValueError("Пустая фраза")
+        return self._primavtodor.parse_booking(text)
 
     def _propose_change(self, arguments: dict[str, object]) -> dict[str, object]:
         assert self._proposals is not None
         raw_payload = arguments.get("payload")
         payload = raw_payload if isinstance(raw_payload, dict) else None
+        reason = str(arguments.get("reason", ""))
+        changes = arguments.get("operation") in ("create", "update")
+        if changes and arguments.get("kind") == "bookings" and payload:
+            # the text to approve describes the booking as it will be after the change
+            summary = self._primavtodor.describe_booking(
+                payload, str(arguments["record_id"]) if arguments.get("record_id") else None
+            )
+            reason = f"{summary}. {reason}".strip() if summary else reason
         return self._proposals.create(
             operation=str(arguments.get("operation", "")),
             kind=str(arguments.get("kind", "")),
@@ -483,7 +613,7 @@ class AiToolRegistry:
                 else None
             ),
             payload=payload,
-            reason=str(arguments.get("reason", "")),
+            reason=reason,
         )
 
     def _memory_search(self, arguments: dict[str, object]) -> dict[str, object]:
@@ -491,7 +621,7 @@ class AiToolRegistry:
         query = str(arguments.get("query", "")).strip()
         if not query:
             raise ValueError("Пустой запрос к памяти")
-        limit = max(1, min(int(arguments.get("limit", 5)), MAX_MEMORY_RESULTS))
+        limit = _int(arguments, "limit", 5, 1, MAX_MEMORY_RESULTS)
         items = self._memory.search(query, limit=limit)
         return {"count": len(items), "memories": items}
 

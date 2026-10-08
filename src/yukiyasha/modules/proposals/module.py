@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import uuid
+from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 
 from yukiyasha.modules.audit import AuditLog
@@ -23,7 +24,7 @@ from yukiyasha.version import get_version
 PROPOSALS_DIR = "proposals/items"
 PROPOSAL_ID_RE = re.compile(r"^prop-[0-9a-f]{12}$")
 OPERATIONS = {"create", "update", "delete"}
-KINDS = {"waybills", "fuel", "employees", "vehicles"}
+KINDS = {"waybills", "fuel", "employees", "vehicles", "bookings"}
 
 PROPOSALS_MANIFEST = ModuleManifest(
     module_id="proposals",
@@ -254,27 +255,29 @@ class ProposalModule:
         payload = proposal.get("payload")
         values = payload if isinstance(payload, dict) else {}
 
-        if operation in {"update", "delete"}:
-            assert isinstance(record_id, str)
+        # the stale check and the change are one step: a direct edit cannot slip in between
+        with self._write_guard():
+            if operation in {"update", "delete"}:
+                assert isinstance(record_id, str)
+                try:
+                    current = self._primavtodor.get_record(kind, record_id)
+                except PrimavtodorError as exc:
+                    return self._mark_stale(proposal, type(exc).__name__)
+                if _fingerprint(current) != proposal.get("base_fingerprint"):
+                    return self._mark_stale(proposal, "target_changed")
+
             try:
-                current = self._primavtodor.get_record(kind, record_id)
+                if operation == "create":
+                    result = self._primavtodor.create(kind, values)
+                elif operation == "update":
+                    assert isinstance(record_id, str)
+                    result = self._primavtodor.update(kind, record_id, values)
+                else:
+                    assert isinstance(record_id, str)
+                    self._primavtodor.delete(kind, record_id)
+                    result = {"id": record_id, "deleted": True}
             except PrimavtodorError as exc:
                 return self._mark_stale(proposal, type(exc).__name__)
-            if _fingerprint(current) != proposal.get("base_fingerprint"):
-                return self._mark_stale(proposal, "target_changed")
-
-        try:
-            if operation == "create":
-                result = self._primavtodor.create(kind, values)
-            elif operation == "update":
-                assert isinstance(record_id, str)
-                result = self._primavtodor.update(kind, record_id, values)
-            else:
-                assert isinstance(record_id, str)
-                self._primavtodor.delete(kind, record_id)
-                result = {"id": record_id, "deleted": True}
-        except PrimavtodorError as exc:
-            return self._mark_stale(proposal, type(exc).__name__)
 
         proposal["status"] = "applied"
         proposal["resolved_at"] = _now()
@@ -294,6 +297,10 @@ class ProposalModule:
             },
         )
         return proposal
+
+    def _write_guard(self) -> AbstractContextManager[object]:
+        lock = getattr(self._primavtodor, "write_lock", None)
+        return lock if lock is not None else nullcontext()
 
     def _mark_stale(
         self, proposal: dict[str, object], reason: str

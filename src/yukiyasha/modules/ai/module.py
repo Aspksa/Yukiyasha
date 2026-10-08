@@ -32,6 +32,9 @@ from yukiyasha.modules.manifest import ModuleManifest
 from yukiyasha.modules.registry import ModuleState
 from yukiyasha.version import get_version
 
+NOT_RUN = '{"error":"Не выполнено: нет места"}'  # answer to a call that did not fit
+MIN_TOOL_ROOM = 200  # characters; below this another tool answer is not worth asking for
+MAX_TOOL_ROUNDS = 3  # planning rounds per turn: read, then act on what was read
 PERSONA_PATH = "ai/persona.md"
 CHATS_DIR = "ai/chats"
 CHAT_ID_RE = re.compile(r"^chat-[0-9a-f]{8}$")
@@ -171,6 +174,15 @@ class ChatTurn:
         if close is not None:
             close()
         self._slot.release()
+
+
+def _fit(content: str, room: int) -> str:
+    """A tool answer cut to the room that is left, so later rounds never overflow the context."""
+    if len(content) <= max(room, 0):
+        return content
+    if room < MIN_TOOL_ROOM:
+        return ""  # a few characters of JSON would only mislead the model
+    return content[: room - 60] + " …[ответ обрезан по размеру контекста]"
 
 
 class AiModule:
@@ -395,31 +407,47 @@ class AiModule:
         planner = getattr(provider, "plan_tools", None)
         if not callable(planner):
             return context, []
-        plan = planner(context, self._tools.definitions(user_text))
-        if plan is None:
-            return context, []
-        enriched = [*context, plan.message]
+        enriched = list(context)
         documents: list[dict[str, object]] = []
         seen_paths: set[str] = set()
-        for call in plan.calls:
-            content = self._tools.execute(
-                call.name,
-                call.arguments,
-                user_text,
-            )
-            enriched.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": call.id,
-                    "name": call.name,
-                    "content": content,
-                }
-            )
-            for document in _document_refs(call.name, content):
-                path = str(document.get("path", ""))
-                if path and path not in seen_paths:
-                    seen_paths.add(path)
-                    documents.append(document)
+        done: dict[str, str] = {}  # an identical call is answered, never executed twice
+        # tool answers share what is left of the context after the persona, history and message
+        used = sum(len(str(message.get("content") or "")) for message in context)
+        room = self.settings.max_context_chars - used
+        # A request like «запиши Веровского 7-9» needs the answer of one tool (the parsed
+        # booking) before the next call (the proposal), so planning repeats a few rounds.
+        for _ in range(MAX_TOOL_ROUNDS):
+            if room < MIN_TOOL_ROOM:
+                break  # nothing useful fits any more
+            plan = planner(enriched, self._tools.definitions(user_text))
+            if plan is None:
+                break
+            enriched.append(plan.message)
+            for position, call in enumerate(plan.calls):
+                key = f"{call.name}:{json.dumps(call.arguments, sort_keys=True, default=str)}"
+                # every later call of the plan keeps room for at least a «not run» answer
+                usable = room - len(NOT_RUN) * (len(plan.calls) - position - 1)
+                if key not in done and usable >= MIN_TOOL_ROOM:
+                    done[key] = self._tools.execute(call.name, call.arguments, user_text)
+                # a call is never run unless the model can be told what came of it
+                content = _fit(done[key], usable) if key in done else ""
+                content = content or NOT_RUN
+                room -= len(content)
+                enriched.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "content": content,
+                    }
+                )
+                for document in _document_refs(call.name, content):
+                    path = str(document.get("path", ""))
+                    if path and path not in seen_paths:
+                        seen_paths.add(path)
+                        documents.append(document)
+        if len(enriched) == len(context):
+            return context, []
         return enriched, documents
 
     def begin_chat(self, chat_id: str | None, message: str) -> ChatTurn:

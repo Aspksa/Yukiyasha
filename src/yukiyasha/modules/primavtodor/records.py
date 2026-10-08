@@ -9,7 +9,9 @@ disk module's public API, so every disk safeguard (sandbox, size limit, atomic w
 import json
 import math
 import re
+import threading
 import uuid
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 
 from yukiyasha.modules.disk import DiskConflictError, DiskError, DiskModule
@@ -291,6 +293,11 @@ class Records:
     def __init__(self, disk: DiskModule, settings: ModuleSettings | None = None) -> None:
         self.settings = settings or ModuleSettings(disk)
         self._stores = {kind: RecordStore(disk, entity) for kind, entity in ENTITIES.items()}
+        # other parts of the module (the vehicle schedule) can veto a delete: (kind, id) -> labels
+        self.extra_references: Callable[[str, str], list[str]] | None = None
+        # a delete checks references and then removes; a booking checks its car and driver and
+        # then saves. Both run under this lock so neither can slip between the other's steps.
+        self.write_lock = threading.RLock()
 
     def _ctx(self) -> _Ctx:
         return _Ctx(self._stores, self.settings)
@@ -358,32 +365,34 @@ class Records:
         return self._view(entity, record, self._ctx())
 
     def update(self, kind: str, record_id: str, payload: dict[str, object]) -> dict[str, object]:
-        entity = self.entity(kind)
-        store = self._stores[kind]
-        existing = store.load(record_id)
-        values = self._clean(entity, payload, self._ctx(), own_id=record_id)
-        record = {
-            "id": record_id,
-            "created_at": existing.get("created_at") or _now(),
-            "updated_at": _now(),
-            **values,
-        }
-        if kind == KIND_EMPLOYEES:
-            record.update(self._histories(existing, record))
-        store.save(record, overwrite=True)
-        return self._view(entity, record, self._ctx())
+        with self.write_lock:  # a proposal being approved and a direct edit take turns
+            entity = self.entity(kind)
+            store = self._stores[kind]
+            existing = store.load(record_id)
+            values = self._clean(entity, payload, self._ctx(), own_id=record_id)
+            record = {
+                "id": record_id,
+                "created_at": existing.get("created_at") or _now(),
+                "updated_at": _now(),
+                **values,
+            }
+            if kind == KIND_EMPLOYEES:
+                record.update(self._histories(existing, record))
+            store.save(record, overwrite=True)
+            return self._view(entity, record, self._ctx())
 
     def delete(self, kind: str, record_id: str) -> None:
         self.entity(kind)
         store = self._stores[kind]
-        store.load(record_id)  # NotFound if it does not exist
-        references = self._references(kind, record_id, self._ctx())
-        if references:
-            shown = ", ".join(references[:5]) + (" …" if len(references) > 5 else "")
-            raise RecordInUseError(
-                f"Нельзя удалить: на запись ссылаются другие данные ({shown})", references
-            )
-        store.delete(record_id)
+        with self.write_lock:
+            store.load(record_id)  # NotFound if it does not exist
+            references = self._references(kind, record_id, self._ctx())
+            if references:
+                shown = ", ".join(references[:5]) + (" …" if len(references) > 5 else "")
+                raise RecordInUseError(
+                    f"Нельзя удалить: на запись ссылаются другие данные ({shown})", references
+                )
+            store.delete(record_id)
 
     @staticmethod
     def _histories(
@@ -692,6 +701,8 @@ class Records:
             for fuel in ctx.all(KIND_FUEL).values():
                 if fuel.get("waybill_id") == record_id:
                     found.append(f"заправка {format_date(fuel.get('date'))}")
+        if self.extra_references is not None:
+            found.extend(self.extra_references(kind, record_id))
         return found
 
     # ----- presentation -----

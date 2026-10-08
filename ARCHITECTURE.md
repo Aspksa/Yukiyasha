@@ -64,6 +64,13 @@ uses it for days off, РВ and the month norm, and `timesheet_form.py` fills the
 painted, the form's totals live, the last block repeated beyond 15 people). Print settings (organisation,
 signers, control wording) live next to the season in `settings.json`.
 
+The vehicle schedule (`bookings.py`) keeps `book-*.json` files in the garage folder: a car, a
+driver, a range of days and a type. Overlaps are reported, never forbidden; sick leave and leave
+come from the timesheet (`Timesheet.absences`); a car or driver with bookings cannot be deleted.
+`quickadd.py` reads one typed line into a booking (pure, nothing stored), `briefing.py` builds the
+summary for today, and `fuel_inbox.py` loads statements dropped into «ГСМ/Входящие» (the disk
+module offers `read_bytes` and a never-overwriting `move` for it).
+
 ## Audit
 
 Audit events live under `system/audit/YYYY-MM-DD/*.json`. Proposal events record proposal id,

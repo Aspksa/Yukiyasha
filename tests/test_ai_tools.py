@@ -61,11 +61,11 @@ def test_ai_executes_provider_tool_plan_before_streaming_final_answer(tmp_path: 
         events = list(module.begin_chat(None, "Покажи путевые листы").events())
 
     assert events[-1]["type"] == "done"
-    assert len(provider.requests) == 2
+    assert len(provider.requests) == 3  # plan, plan again with the results (nothing more), answer
     assert provider.requests[0]["body"]["tools"][0]["function"]["name"] == (
         "primavtodor_list_records"
     )
-    final_messages = provider.requests[1]["body"]["messages"]
+    final_messages = provider.requests[2]["body"]["messages"]
     assert any(message["role"] == "tool" for message in final_messages)
     tool_message = next(message for message in final_messages if message["role"] == "tool")
     assert "wb-1" in tool_message["content"]

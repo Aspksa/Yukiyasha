@@ -425,8 +425,14 @@ class AiModule:
             for call in plan.calls:
                 key = f"{call.name}:{json.dumps(call.arguments, sort_keys=True, default=str)}"
                 if key not in done:
-                    done[key] = self._tools.execute(call.name, call.arguments, user_text)
-                content = _fit(done[key], room)
+                    if room < MIN_TOOL_ROOM:
+                        # never run what the model could not be told the result of
+                        done[key] = json.dumps(
+                            {"error": "Не выполнено: контекст заполнен"}, ensure_ascii=False
+                        )
+                    else:
+                        done[key] = self._tools.execute(call.name, call.arguments, user_text)
+                content = _fit(done[key], room) if room >= MIN_TOOL_ROOM else done[key]
                 room -= len(content)
                 enriched.append(
                     {

@@ -255,3 +255,42 @@ def test_a_timesheet_file_with_only_broken_dates_does_not_break_the_schedule(
     view = module.bookings.overview(date(2026, 10, 5), 7, date(2026, 10, 8))
 
     assert view["absent_now"] == []
+
+
+def _race(module: PrimavtodorModule, number: int) -> dict[str, bool]:
+    """Delete a car while a booking for it is being created; report what each side achieved."""
+    import threading
+
+    from yukiyasha.modules.primavtodor import RecordInUseError, RecordValidationError
+
+    car = make_vehicle(module, plate=f"Х{number}", model="Hino")
+    person = {"full_name": f"Тест {number}", "is_driver": True}
+    driver = module.data.create("employees", person)
+    outcome = {"deleted": False, "booked": False}
+
+    def delete() -> None:
+        try:
+            module.data.delete("vehicles", car["id"])
+            outcome["deleted"] = True
+        except RecordInUseError:
+            pass
+
+    def create() -> None:
+        try:
+            book(module, car, driver, "2026-10-07", "2026-10-08")
+            outcome["booked"] = True
+        except RecordValidationError:
+            pass
+
+    threads = [threading.Thread(target=delete), threading.Thread(target=create)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return outcome
+
+
+def test_a_booking_never_outlives_the_car_it_was_created_for(module: PrimavtodorModule) -> None:
+    for number in range(25):
+        outcome = _race(module, number)
+        assert not (outcome["deleted"] and outcome["booked"]), number

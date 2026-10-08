@@ -9,6 +9,7 @@ disk module's public API, so every disk safeguard (sandbox, size limit, atomic w
 import json
 import math
 import re
+import threading
 import uuid
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -294,6 +295,9 @@ class Records:
         self._stores = {kind: RecordStore(disk, entity) for kind, entity in ENTITIES.items()}
         # other parts of the module (the vehicle schedule) can veto a delete: (kind, id) -> labels
         self.extra_references: Callable[[str, str], list[str]] | None = None
+        # a delete checks references and then removes; a booking checks its car and driver and
+        # then saves. Both run under this lock so neither can slip between the other's steps.
+        self.write_lock = threading.RLock()
 
     def _ctx(self) -> _Ctx:
         return _Ctx(self._stores, self.settings)
@@ -379,14 +383,15 @@ class Records:
     def delete(self, kind: str, record_id: str) -> None:
         self.entity(kind)
         store = self._stores[kind]
-        store.load(record_id)  # NotFound if it does not exist
-        references = self._references(kind, record_id, self._ctx())
-        if references:
-            shown = ", ".join(references[:5]) + (" …" if len(references) > 5 else "")
-            raise RecordInUseError(
-                f"Нельзя удалить: на запись ссылаются другие данные ({shown})", references
-            )
-        store.delete(record_id)
+        with self.write_lock:
+            store.load(record_id)  # NotFound if it does not exist
+            references = self._references(kind, record_id, self._ctx())
+            if references:
+                shown = ", ".join(references[:5]) + (" …" if len(references) > 5 else "")
+                raise RecordInUseError(
+                    f"Нельзя удалить: на запись ссылаются другие данные ({shown})", references
+                )
+            store.delete(record_id)
 
     @staticmethod
     def _histories(

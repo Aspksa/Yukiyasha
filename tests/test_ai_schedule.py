@@ -323,3 +323,48 @@ def test_tool_answers_never_overflow_the_context_across_rounds(setup, tmp_path: 
 
     final = provider.requests[-1]["body"]["messages"]
     assert sum(len(str(m.get("content") or "")) for m in final) <= 9000
+
+
+def test_a_question_about_a_booking_cannot_create_a_proposal(setup) -> None:
+    _, _, tools, _, _ = setup
+    for message in ("Какая бронь на завтра?", "Покажи брони на неделю"):
+        assert tools.might_need_tools(message)  # the schedule can be read
+        names = {d["function"]["name"] for d in tools.definitions(message)}
+        assert "primavtodor_propose_change" not in names, message
+        attempt = {"operation": "create", "kind": "bookings", "payload": {}}
+        denied = call(tools, "primavtodor_propose_change", attempt, message)
+        assert denied == {"error": "Доступ к действию запрещён"}
+
+
+def test_calls_that_cannot_report_back_are_not_executed(setup, tmp_path: Path) -> None:
+    from tests.fake_provider import FakeProvider
+    from yukiyasha.config import AiSettings
+    from yukiyasha.modules.ai import AiModule
+
+    module, proposals, tools, car, driver = setup
+    for day in range(1, 29):
+        module.bookings.create(
+            {"vehicle_id": car["id"], "driver_id": driver["id"], "kind": "trip",
+             "date_from": f"2026-11-{day:02d}", "date_to": f"2026-11-{day:02d}"}
+        )  # fmt: skip
+    values = {"vehicle_id": car["id"], "driver_id": driver["id"], "date_from": "2026-12-01"}
+    schedule = {"id": "a", "type": "function", "function": {
+        "name": "primavtodor_schedule", "arguments": json.dumps({"day": "2026-11-01", "days": 31})}}
+    propose = {"id": "b", "type": "function", "function": {
+        "name": "primavtodor_propose_change", "arguments": json.dumps(
+            {"operation": "create", "kind": "bookings", "payload": values})}}  # fmt: skip
+
+    with FakeProvider(chunks=["ok"], tool_rounds=[[schedule, propose]]) as provider:
+        disk = DiskModule(tmp_path / "ai-disk")
+        disk.start()
+        settings = AiSettings(base_url=provider.base_url, model="m", api_key="k",
+                              max_context_chars=6000)  # the schedule alone fills it
+        assistant = AiModule(disk, settings, tools=tools)
+        assistant.start()
+        turn = assistant.begin_chat(None, "Покажи график машин и запиши Веровского на 1 декабря")
+        list(turn.events())
+        turn.release()
+
+    assert [p for p in proposals.list_items() if p["status"] == "pending"] == []
+    answers = [m for m in provider.requests[-1]["body"]["messages"] if m["role"] == "tool"]
+    assert len(answers) == 2 and "Не выполнено" in answers[1]["content"]

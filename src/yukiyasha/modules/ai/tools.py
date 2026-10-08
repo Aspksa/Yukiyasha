@@ -54,7 +54,7 @@ FORGET_TRIGGER = re.compile(
 MUTATION_TRIGGER = re.compile(
     r"создай|добавь|измени|обнови|исправь|удали|оформи|закрой|назначь|"
     + BOOKING_VERBS
-    + r"|бронь|предложи измен|подготовь измен",
+    + r"|предложи измен|подготовь измен",
     re.IGNORECASE,
 )
 KINDS = ("waybills", "fuel", "employees", "vehicles")

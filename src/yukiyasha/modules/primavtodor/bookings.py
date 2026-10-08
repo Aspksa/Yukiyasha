@@ -115,21 +115,23 @@ class Bookings:
         }
 
     def create(self, payload: dict[str, object]) -> dict[str, object]:
-        values = self._clean(payload)
-        now = _now()
-        record = {"id": self._store.new_id(), "created_at": now, "updated_at": now, **values}
-        self._store.save(record, overwrite=False)
+        with self._data.write_lock:  # the car and driver must still exist when it is saved
+            values = self._clean(payload)
+            now = _now()
+            record = {"id": self._store.new_id(), "created_at": now, "updated_at": now, **values}
+            self._store.save(record, overwrite=False)
         return self._view(record, self._all())
 
     def update(self, record_id: str, payload: dict[str, object]) -> dict[str, object]:
-        existing = self._store.load(record_id)
-        record = {
-            "id": record_id,
-            "created_at": existing.get("created_at") or _now(),
-            "updated_at": _now(),
-            **self._clean(payload),
-        }
-        self._store.save(record, overwrite=True)
+        with self._data.write_lock:
+            existing = self._store.load(record_id)
+            record = {
+                "id": record_id,
+                "created_at": existing.get("created_at") or _now(),
+                "updated_at": _now(),
+                **self._clean(payload),
+            }
+            self._store.save(record, overwrite=True)
         return self._view(record, self._all())
 
     def delete(self, record_id: str) -> None:

@@ -4,6 +4,7 @@ from datetime import date
 
 from yukiyasha.modules.permissions import PermissionBroker
 from yukiyasha.modules.primavtodor.bookings import KIND_BOOKINGS
+from yukiyasha.modules.primavtodor.errors import PrimavtodorError
 from yukiyasha.modules.primavtodor.module import PrimavtodorModule
 from yukiyasha.modules.registry import ModuleState
 
@@ -63,8 +64,14 @@ class PrimavtodorReadAccess(_PrimavtodorAccess):
         self._check("primavtodor.read")
         return self._module.bookings.parse(text, date.today())
 
-    def describe_booking(self, values: dict[str, object]) -> str:
+    def describe_booking(self, values: dict[str, object], record_id: str | None = None) -> str:
+        """Text of a booking; with ``record_id`` the values change that stored booking."""
         self._check("primavtodor.read")
+        if record_id:
+            try:
+                values = {**self._module.bookings.record(record_id)["values"], **values}  # type: ignore[dict-item]
+            except PrimavtodorError:
+                return ""  # the proposal itself reports a missing booking
         return self._module.bookings.describe(values)
 
     def read_document(self, section_id: str, name: str) -> dict[str, object]:

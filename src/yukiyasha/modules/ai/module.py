@@ -399,6 +399,7 @@ class AiModule:
         enriched = list(context)
         documents: list[dict[str, object]] = []
         seen_paths: set[str] = set()
+        done: dict[str, str] = {}  # an identical call is answered, never executed twice
         # A request like «запиши Веровского 7-9» needs the answer of one tool (the parsed
         # booking) before the next call (the proposal), so planning repeats a few rounds.
         for _ in range(MAX_TOOL_ROUNDS):
@@ -407,11 +408,10 @@ class AiModule:
                 break
             enriched.append(plan.message)
             for call in plan.calls:
-                content = self._tools.execute(
-                    call.name,
-                    call.arguments,
-                    user_text,
-                )
+                key = f"{call.name}:{json.dumps(call.arguments, sort_keys=True, default=str)}"
+                if key not in done:
+                    done[key] = self._tools.execute(call.name, call.arguments, user_text)
+                content = done[key]
                 enriched.append(
                     {
                         "role": "tool",

@@ -210,3 +210,62 @@ def test_terse_booking_orders_reach_the_tools_and_chatter_does_not(setup) -> Non
         assert "primavtodor_propose_change" in names, message
     for message in ("Запиши мой номер телефона", "Привет, как дела?", "Расскажи анекдот"):
         assert not tools.might_need_tools(message), message
+
+
+def test_every_cancel_and_move_verb_reaches_the_tools(setup) -> None:
+    _, _, tools, _, _ = setup
+    for message in (
+        "Отмени Веровского 9",
+        "Сократи Веровского до 9",
+        "Убери Веровского 9",
+        "Сдвинь Веровского на 10",
+    ):
+        names = {d["function"]["name"] for d in tools.definitions(message)}
+        assert "primavtodor_propose_change" in names, message
+
+
+def test_an_update_proposal_describes_the_booking_after_the_change(setup) -> None:
+    module, _, tools, car, driver = setup
+    other = make_vehicle(module, plate="Л 777 ЛЛ", model="Lexus")
+    created = module.bookings.create(
+        {"vehicle_id": car["id"], "driver_id": driver["id"], "date_from": "2026-10-07",
+         "date_to": "2026-10-09", "kind": "trip"}
+    )  # fmt: skip
+
+    proposal = call(
+        tools,
+        "primavtodor_propose_change",
+        {"operation": "update", "kind": "bookings", "record_id": created["id"],
+         "payload": {"vehicle_id": other["id"], "date_to": "2026-10-10"}},
+        "Перенеси Веровского на Лексус до 10",
+    )  # fmt: skip
+
+    assert "error" not in proposal, proposal
+    assert "Л777ЛЛ" in proposal["reason"].replace(" ", "")  # the new car, not the old one
+    assert "10.2026" in proposal["reason"] and "10.10.2026" in proposal["reason"]
+
+
+def test_a_repeated_proposal_call_is_executed_once(setup, tmp_path: Path) -> None:
+    from tests.fake_provider import FakeProvider
+    from yukiyasha.config import AiSettings
+    from yukiyasha.modules.ai import AiModule
+
+    module, proposals, tools, car, driver = setup
+    values = {"vehicle_id": car["id"], "driver_id": driver["id"], "date_from": "2026-10-07"}
+    propose = {"id": "c1", "type": "function", "function": {
+        "name": "primavtodor_propose_change", "arguments": json.dumps(
+            {"operation": "create", "kind": "bookings", "payload": values})}}  # fmt: skip
+    again = {**propose, "id": "c2"}  # the model repeats it after seeing the result
+
+    with FakeProvider(chunks=["Готово."], tool_rounds=[[propose], [again]]) as provider:
+        disk = DiskModule(tmp_path / "ai-disk")
+        disk.start()
+        assistant = AiModule(
+            disk, AiSettings(base_url=provider.base_url, model="m", api_key="k"), tools=tools
+        )
+        assistant.start()
+        turn = assistant.begin_chat(None, "Запиши Веровского 7")
+        list(turn.events())
+        turn.release()
+
+    assert len([p for p in proposals.list_items() if p["status"] == "pending"]) == 1

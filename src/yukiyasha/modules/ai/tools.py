@@ -24,13 +24,18 @@ DOCUMENT_TRIGGER = re.compile(
     r"документ|договор|сч[её]т|оферт|служебн|записк|приказ|распоряж",
     re.IGNORECASE,
 )
+# verbs that book, move or cancel a trip; both the mutation gate and the terse-order route use them
+BOOKING_VERBS = (
+    "запиши|поставь|отметь|запланируй|забронируй|перенеси|сдвинь|продли|сократи|"
+    "отмени|убери"
+)
 BUSINESS_TRIGGER = re.compile(
     r"примавтодор|путев|водител|сотрудник|машин|автомоб|гараж|гсм|топлив|заправ|"
     r"табел|пробег|расход|норм[аы]|одометр|документ|договор|сч[её]т|оферт|служебн|"
     r"записк|приказ|распоряж|график|командиров|свободн|отъезд|выезд|больнич|отпуск|"
     r"сводк|занят|поездк|брон|"
     # «Запиши Веровского 7-9»: a short booking order has a name and a date, nothing else
-    r"\b(?:запиши|поставь|отметь|запланируй|перенеси|сдвинь|продли)\s+\S+(?:\s+\S+)?\s+(?:с\s+)?\d{1,2}\b",
+    r"\b(?:" + BOOKING_VERBS + r")(?:\s+\S+){1,4}?\s+(?:с\s+|до\s+|на\s+)?\d{1,2}\b",
     re.IGNORECASE,
 )
 MEMORY_TRIGGER = re.compile(
@@ -46,10 +51,15 @@ FORGET_TRIGGER = re.compile(
     r"\bзабудь\b|\bудали (?:это )?из памяти\b|\bне помни\b",
     re.IGNORECASE,
 )
+# verbs that book, move or cancel a trip; both the mutation gate and the terse-order route use them
+BOOKING_VERBS = (
+    "запиши|поставь|отметь|запланируй|забронируй|перенеси|перенес[её]м|сдвинь|продли|сократи|"
+    "отмени|убери"
+)
 MUTATION_TRIGGER = re.compile(
-    r"создай|добавь|измени|обнови|исправь|удали|оформи|закрой|назначь|запиши|поставь|"
-    r"забронируй|бронь|перенес[иё]|отмени|сдвинь|продли|сократи|убери|отметь|запланируй|"
-    r"предложи измен|подготовь измен",
+    r"создай|добавь|измени|обнови|исправь|удали|оформи|закрой|назначь|"
+    + BOOKING_VERBS
+    + r"|бронь|предложи измен|подготовь измен",
     re.IGNORECASE,
 )
 KINDS = ("waybills", "fuel", "employees", "vehicles")
@@ -583,9 +593,12 @@ class AiToolRegistry:
         raw_payload = arguments.get("payload")
         payload = raw_payload if isinstance(raw_payload, dict) else None
         reason = str(arguments.get("reason", ""))
-        creates = arguments.get("operation") == "create"
-        if creates and arguments.get("kind") == "bookings" and payload:
-            summary = self._primavtodor.describe_booking(payload)  # readable in the list
+        changes = arguments.get("operation") in ("create", "update")
+        if changes and arguments.get("kind") == "bookings" and payload:
+            # the text to approve describes the booking as it will be after the change
+            summary = self._primavtodor.describe_booking(
+                payload, str(arguments["record_id"]) if arguments.get("record_id") else None
+            )
             reason = f"{summary}. {reason}".strip() if summary else reason
         return self._proposals.create(
             operation=str(arguments.get("operation", "")),

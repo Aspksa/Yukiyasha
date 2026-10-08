@@ -5,6 +5,7 @@ All notable changes to Yukiyasha are documented here.
 ## [Unreleased]
 
 ### Fixed
+- Short booking orders such as «Запиши Веровского 7-9» or «Отмени бронь» now reach the schedule tools of the assistant; unrelated chat («Запиши мой номер») still does not.
 - The assistant plans tools in up to three rounds per turn, so a request like «запиши Веровского 7-9» can read the parsed booking first and then propose it; the booking text in a proposal is built from the normalized values; a timesheet file whose marks are all broken dates no longer crashes the schedule.
 - A car or driver with bookings in the schedule can no longer be deleted (the booking would have
   vanished from the grid); a hand-edited timesheet file with a broken date no longer breaks the

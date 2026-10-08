@@ -199,3 +199,14 @@ def test_the_summary_is_built_from_the_normalized_booking(setup) -> None:
     assert "None" not in proposal["reason"]
     assert "07.10.2026" in proposal["reason"] and "Командировка" in proposal["reason"]
     assert proposal["payload"]["date_to"] == "2026-10-07"
+
+
+def test_terse_booking_orders_reach_the_tools_and_chatter_does_not(setup) -> None:
+    _, _, tools, _, _ = setup
+    orders = ("Запиши Веровского 7-9", "Забронируй на среду", "Отмени бронь", "Продли Игоря до 12")
+    for message in orders:
+        assert tools.might_need_tools(message), message
+        names = {d["function"]["name"] for d in tools.definitions(message)}
+        assert "primavtodor_propose_change" in names, message
+    for message in ("Запиши мой номер телефона", "Привет, как дела?", "Расскажи анекдот"):
+        assert not tools.might_need_tools(message), message
